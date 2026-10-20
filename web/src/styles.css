@@ -513,3 +513,9 @@ select:focus, input[type="text"]:focus { outline: none; border-color: var(--acce
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Modo "ocultar valores": borra o dinheiro sem trocar o texto. */
+.money-hidden {
+  filter: blur(6px);
+  user-select: none;
+}

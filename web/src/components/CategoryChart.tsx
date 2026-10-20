@@ -46,7 +46,7 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }} barCategoryGap={4}>
                 <CartesianGrid horizontal={false} />
-                <XAxis type="number" tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} />
+                <XAxis type="number" className={money.axisClass} tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} />
                 <YAxis
                   type="category"
                   dataKey="category"

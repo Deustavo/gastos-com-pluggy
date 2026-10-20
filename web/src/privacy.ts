@@ -1,10 +1,10 @@
-import { useSyncExternalStore } from "react";
+import { createElement, useSyncExternalStore, type ReactNode } from "react";
 import { formatCents, formatCentsCompact } from "./format.ts";
 
 // Modo "ocultar valores": estado global persistido no navegador, lido por quem exibe dinheiro.
 const KEY = "openfinance:hide-values";
-const MASK = "R$ •••••";
-const MASK_COMPACT = "•••";
+// Valores ocultos continuam no DOM, só borrados (classe .money-hidden em styles.css).
+const HIDDEN_CLASS = "money-hidden";
 
 let hidden = load();
 const listeners = new Set<() => void>();
@@ -36,12 +36,15 @@ export function useHideValues(): boolean {
   return useSyncExternalStore(subscribe, () => hidden);
 }
 
-// Formatadores de dinheiro que respeitam o modo oculto.
+// Formatadores de dinheiro que respeitam o modo oculto. `compact` é texto puro (eixos SVG):
+// quem usa aplica `axisClass` no eixo para borrá-lo.
 export function useMoney() {
   const isHidden = useHideValues();
   return {
     hidden: isHidden,
-    cents: (cents: number) => (isHidden ? MASK : formatCents(cents)),
-    compact: (cents: number) => (isHidden ? MASK_COMPACT : formatCentsCompact(cents)),
+    cents: (cents: number): ReactNode =>
+      isHidden ? createElement("span", { className: HIDDEN_CLASS, "aria-hidden": true }, formatCents(cents)) : formatCents(cents),
+    compact: (cents: number) => formatCentsCompact(cents),
+    axisClass: isHidden ? HIDDEN_CLASS : undefined,
   };
 }

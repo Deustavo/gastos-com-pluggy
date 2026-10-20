@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { SummaryResponse } from "../../../src/api/contract.ts";
 import { useMoney } from "../privacy.ts";
 import { Icon } from "./Icon.tsx";
@@ -10,7 +11,7 @@ interface Props {
 
 export function SummaryCards({ summary, loading, error }: Props) {
   const money = useMoney();
-  const value = (fn: (s: SummaryResponse) => string) =>
+  const value = (fn: (s: SummaryResponse) => ReactNode) =>
     summary ? fn(summary) : loading ? "…" : error ? "—" : "—";
   return (
     <div className={`cards ${loading && summary ? "is-refreshing" : ""}`} aria-busy={loading}>
@@ -25,7 +26,12 @@ export function SummaryCards({ summary, loading, error }: Props) {
         <div className="card-value">{value((s) => money.cents(s.expenseCents))}</div>
         <div className="card-sub" title="Confirmado, sem transferências nem faturas">
           {summary
-            ? `fixo ${money.cents(summary.fixedExpenseCents)} · variável ${money.cents(summary.expenseCents - summary.fixedExpenseCents)}`
+            ? (
+                <>
+                  fixo {money.cents(summary.fixedExpenseCents)} · variável{" "}
+                  {money.cents(summary.expenseCents - summary.fixedExpenseCents)}
+                </>
+              )
             : "confirmado, sem transferências nem faturas"}
         </div>
       </div>

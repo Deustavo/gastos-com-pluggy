@@ -46,7 +46,7 @@ export function MonthlyChart({ summary, loading, error, month, onSelect }: Props
               >
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickFormatter={(v: string) => formatMonthShort(v)} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} width={72} />
+                <YAxis className={money.axisClass} tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} width={72} />
                 <Tooltip
                   cursor={{ className: "chart-cursor" }}
                   content={({ active, payload, label }) => {
