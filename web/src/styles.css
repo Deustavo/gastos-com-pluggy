@@ -16,6 +16,15 @@
   --accent-soft: rgb(42 120 214 / 0.12);
   --series-1: #d63c3c; /* gasto */
   --series-2: #1f9d55; /* receita */
+  /* paleta categórica (pizza por categoria), em ordem fixa */
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-4: #eda100;
+  --cat-5: #e87ba4;
+  --cat-6: #008300;
+  --cat-7: #6250d6;
+  --cat-other: #a3a7b3;
   --grid: #eceef3;
   --neg: #c62828;
   --pos: #1b7f3b;
@@ -59,6 +68,14 @@
     --accent-soft: rgb(57 135 229 / 0.18);
     --series-1: #e5534b;
     --series-2: #3fb871;
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #c98500;
+    --cat-5: #d55181;
+    --cat-6: #008300;
+    --cat-7: #9085e9;
+    --cat-other: #5c606d;
     --grid: #24262e;
     --neg: #ef6b6b;
     --pos: #5cc77d;
@@ -302,6 +319,21 @@ main > *:nth-child(5) { animation-delay: 0.2s; }
   padding: 10px 12px; box-shadow: var(--shadow-lg); font-size: 13px;
 }
 .tooltip-title { font-weight: 600; margin-bottom: 2px; }
+.pie-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.pie-row .chart { width: 180px; height: 180px; flex: none; }
+.pie-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 12px; }
+.pie-legend button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; border: 0; border-radius: 6px;
+  background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer;
+}
+.pie-legend button:hover { background: var(--surface-2); }
+.pie-legend button.dim { opacity: 0.45; }
+.pie-legend button:disabled { cursor: default; background: none; }
+.pie-legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.pie-legend .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pie-legend .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .recharts-pie-sector path { transition: filter 0.15s; }
+.chart .recharts-pie-sector:hover path { filter: brightness(1.12); }
 .legend { display: flex; justify-content: center; gap: 16px; font-size: 12px; color: var(--text-2); padding-top: 4px; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
 .swatch-expense { background: var(--series-1); }
@@ -437,6 +469,8 @@ select:focus, input[type="text"]:focus { outline: none; border-color: var(--acce
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
+  .pie-row { flex-direction: column; align-items: stretch; }
+  .pie-row .chart { margin: 0 auto; }
   .app { padding-bottom: 24px; }
   main { padding: 0 12px; }
   .app-header { margin: 0 0 16px; padding: 10px 12px; position: static; }
