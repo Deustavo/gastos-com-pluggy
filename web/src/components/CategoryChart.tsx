@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { SummaryResponse } from "../../../src/api/contract.ts";
 import { useMoney } from "../privacy.ts";
@@ -14,6 +15,8 @@ interface Props {
 }
 
 const ROW_PX = 30;
+// Sem expandir, mostra só as maiores — dá a mesma altura do gráfico mensal ao lado.
+const TOP_N = 8;
 
 export function CategoryChart({ summary, loading, error, selected, onSelect }: Props) {
   const colors = useChartColors();
@@ -21,6 +24,10 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
   const data = [...(summary?.byCategory ?? [])].sort((a, b) => b.expenseCents - a.expenseCents);
   const total = data.reduce((n, d) => n + Math.max(0, d.expenseCents), 0);
   const pct = (cents: number) => (total > 0 ? Math.round((Math.max(0, cents) / total) * 100) : 0);
+  const [expanded, setExpanded] = useState(false);
+  const hidden = data.length - TOP_N;
+  // A categoria selecionada continua visível mesmo fora do top.
+  const visible = expanded || hidden <= 0 ? data : data.filter((d, i) => i < TOP_N || d.category === selected);
 
   return (
     <Panel
@@ -42,9 +49,9 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
       {summary && data.length > 0 && (
         <>
           <p className="hint">Clique numa barra para filtrar a lista de transações.</p>
-          <div className="chart" style={{ height: data.length * ROW_PX + 40 }}>
+          <div className="chart" style={{ height: visible.length * ROW_PX + 40 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }} barCategoryGap={4}>
+              <BarChart data={visible} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }} barCategoryGap={4}>
                 <CartesianGrid horizontal={false} />
                 <XAxis type="number" className={money.axisClass} tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} />
                 <YAxis
@@ -82,13 +89,18 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
                     if (cat) onSelect(cat === selected ? undefined : cat);
                   }}
                 >
-                  {data.map((d) => (
+                  {visible.map((d) => (
                     <Cell key={d.category} fill={colors.series1} fillOpacity={selected && selected !== d.category ? 0.3 : 1} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {hidden > 0 && (
+            <button type="button" className="link-btn" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Mostrar menos" : `Ver todas (+${hidden})`}
+            </button>
+          )}
         </>
       )}
     </Panel>
