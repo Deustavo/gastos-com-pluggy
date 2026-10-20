@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import type { CategoryRule, RulePreviewResponse } from "../../../src/api/contract.ts";
-import { api } from "../api.ts";
+import { api, MAX_CATEGORY } from "../api.ts";
 import { formatDay } from "../format.ts";
 import { useMoney } from "../privacy.ts";
 import { Icon } from "./Icon.tsx";
@@ -30,7 +30,6 @@ interface FormState {
 }
 
 const MAX_PATTERN = 200;
-const MAX_CATEGORY = 60;
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);

@@ -9,6 +9,7 @@ import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
 import { toLocalDate } from "../sync/dates.ts";
 import type { SyncReport } from "../sync/sync.ts";
+import { canonicalCategory, parseCategory } from "../categorize/categories.ts";
 import { applyRules, compileRule } from "../categorize/rules.ts";
 import type { ApiError, OverrideRequest, OverrideResponse, RuleCreateRequest } from "./contract.ts";
 import {
@@ -93,19 +94,24 @@ function parsePattern(v: unknown): string {
   return pattern;
 }
 
+// Categoria de override ou regra: valida e reaproveita a grafia de uma já existente
+function parseCategoryFor(db: Db, v: unknown): string {
+  let name: string;
+  try {
+    name = parseCategory(v);
+  } catch (e) {
+    throw new BadRequest((e as Error).message);
+  }
+  return canonicalCategory(name, listCategories(db).categories);
+}
+
 // Aplica POST/PATCH de regra sobre o estado atual (no POST, `current` tem só os padrões).
 type RuleDraft = Omit<RuleCreateRequest, "pattern" | "category"> & { pattern?: string; category?: string; enabled: boolean };
-function mergeRule<T extends RuleDraft>(current: T, req: Record<string, unknown>): T {
+function mergeRule<T extends RuleDraft>(db: Db, current: T, req: Record<string, unknown>): T {
   rejectExtra(req, ["pattern", "category", "priority", "enabled"]);
   const next = { ...current };
   if ("pattern" in req) next.pattern = parsePattern(req.pattern);
-  if ("category" in req) {
-    const v = req.category;
-    if (typeof v !== "string" || v.trim() === "" || v.trim().length > 60) {
-      throw new BadRequest("category deve ser texto não vazio de até 60 caracteres");
-    }
-    next.category = v.trim();
-  }
+  if ("category" in req) next.category = parseCategoryFor(db, req.category);
   if ("priority" in req) {
     const v = req.priority;
     if (typeof v !== "number" || !Number.isSafeInteger(v)) throw new BadRequest("priority deve ser inteiro");
@@ -119,14 +125,14 @@ function mergeRule<T extends RuleDraft>(current: T, req: Record<string, unknown>
 }
 
 // Aplica o PATCH sobre o override atual; campos ausentes ficam como estão.
-function mergeOverride(current: OverrideResponse, req: Record<string, unknown>): OverrideResponse {
+function mergeOverride(db: Db, current: OverrideResponse, req: Record<string, unknown>): OverrideResponse {
   rejectExtra(req, ["category", "ignored", "note"]);
   const next = { ...current };
 
   if ("category" in req) {
     const v = req.category as OverrideRequest["category"];
     if (v === null) next.category = null;
-    else if (typeof v === "string" && v.trim() !== "" && v.trim().length <= 60) next.category = v.trim();
+    else if (typeof v === "string") next.category = parseCategoryFor(db, v);
     else throw new BadRequest("category deve ser texto não vazio de até 60 caracteres, ou null");
   }
   if ("ignored" in req) {
@@ -199,7 +205,7 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
   app.patch("/api/overrides/:fingerprint", async (c) => {
     const fp = c.req.param("fingerprint");
     if (!fingerprintExists(db, fp)) return fail(c, 404, "transação não encontrada");
-    const next = mergeOverride(getOverride(db, fp), await readJson(c));
+    const next = mergeOverride(db, getOverride(db, fp), await readJson(c));
     saveOverride(db, next);
     return c.json(next);
   });
@@ -208,7 +214,7 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
   app.get("/api/rules", (c) => c.json(listRules(db)));
 
   app.post("/api/rules", async (c) => {
-    const draft = mergeRule<RuleDraft>({ enabled: true }, await readJson(c));
+    const draft = mergeRule<RuleDraft>(db, { enabled: true }, await readJson(c));
     if (draft.pattern === undefined) throw new BadRequest("pattern é obrigatório");
     if (draft.category === undefined) throw new BadRequest("category é obrigatório");
     const id = insertRule(db, { ...draft, pattern: draft.pattern, category: draft.category }, now());
@@ -248,7 +254,7 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
   app.patch("/api/rules/:id", async (c) => {
     const current = getRule(db, parseId(c.req.param("id")));
     if (!current) return fail(c, 404, "regra não encontrada");
-    updateRule(db, mergeRule(current, await readJson(c)));
+    updateRule(db, mergeRule(db, current, await readJson(c)));
     applyRules(db);
     return c.json(getRule(db, current.id));
   });

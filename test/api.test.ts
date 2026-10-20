@@ -251,6 +251,11 @@ describe("PATCH /api/overrides/:fingerprint", () => {
     assert.equal(overrideRow("fp-b"), undefined);
     assert.equal((await json<SummaryResponse>("/api/summary?month=2026-09")).expenseCents, 50_000);
 
+    // categoria que já existe com outra grafia: grava a existente
+    r = await patch("fp-b", { category: "  limpeza   DA casa " });
+    assert.equal(((await r.json()) as OverrideResponse).category, "Limpeza da casa");
+    r = await patch("fp-b", { category: null });
+
     // override existente (fp-h ignorada): desfazer o ignored apaga a linha
     r = await patch("fp-h", { ignored: false });
     assert.equal(r.status, 200);

@@ -1,6 +1,7 @@
 // Consultas da API: funções puras sobre o Db que montam as respostas do contrato.
 // Leem de v_transactions (tradução, regras e overrides já aplicados).
 
+import { EXTRA_CATEGORIES, NO_CATEGORY } from "../categorize/categories.ts";
 import { byPriority, compileRule, compileRules, loadRules, matchRule, type CompiledRule } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
@@ -19,9 +20,6 @@ import type {
 } from "./contract.ts";
 
 const DAY_MS = 86_400_000;
-export const NO_CATEGORY = "Sem categoria";
-// Categorias próprias, sempre oferecidas na escolha mesmo sem transação, regra ou fornecedor
-export const EXTRA_CATEGORIES = ["Limpeza da casa"];
 
 // Categoria efetiva com o vazio normalizado (mesma expressão no SELECT e nos filtros)
 const CATEGORY_SQL = `COALESCE(NULLIF(TRIM(effective_category), ''), '${NO_CATEGORY}')`;

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CategoryRule, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
+import { MAX_CATEGORY } from "../api.ts";
 import { formatDay, KIND_LABEL } from "../format.ts";
 import { useMoney } from "../privacy.ts";
 import { Icon } from "./Icon.tsx";
@@ -304,6 +305,7 @@ function TxRow({
               autoFocus
               value={draft}
               placeholder="Nome da categoria"
+              maxLength={MAX_CATEGORY}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => e.key === "Escape" && setCreating(false)}
               disabled={saving}

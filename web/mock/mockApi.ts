@@ -17,8 +17,9 @@ import type {
   SyncReport,
   TransactionRow,
 } from "../../src/api/contract.ts";
+import { EXTRA_CATEGORIES } from "../../src/categorize/categories.ts";
 
-const CATS = ["Mercado", "Restaurantes", "Transporte", "Moradia", "Lazer", "Saúde", "Limpeza da casa"];
+const CATS = ["Mercado", "Restaurantes", "Transporte", "Moradia", "Lazer", "Saúde", ...EXTRA_CATEGORIES];
 const overrides = new Map<string, { category?: string | null; ignored?: boolean }>();
 let syncing = false;
 

@@ -17,6 +17,9 @@ import type {
   TransactionsResponse,
 } from "../../src/api/contract.ts";
 
+// Mesmo limite da API (MAX_CATEGORY_LENGTH em src/categorize/categories.ts)
+export const MAX_CATEGORY = 60;
+
 export class HttpError extends Error {
   constructor(
     readonly status: number,
