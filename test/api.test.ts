@@ -5,10 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
 import { createApp } from "../src/api/app.ts";
+import { applyNature } from "../src/categorize/nature.ts";
 import type {
   CategoriesResponse,
   ConnectionsResponse,
   CategoryRule,
+  NatureResponse,
   OverrideResponse,
   RulePreviewResponse,
   RulesResponse,
@@ -525,5 +527,61 @@ describe("regras de categorização (fase 3)", () => {
     assert.equal((await send("DELETE", `/api/rules/${r2.id}`)).status, 204);
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE rule_id IS NOT NULL OR rule_category IS NOT NULL").get(), { n: 0 });
     assert.deepEqual(view((await txs()).get("fp-b")), ["Supermercado", "provider", null, "Supermercado"]);
+  });
+});
+
+describe("natureza (fixo/variável)", () => {
+  const txs = async (month: string) =>
+    new Map((await json<TransactionsResponse>(`/api/transactions?month=${month}`)).items.map((i) => [i.fingerprint, i]));
+  const view = (t: TransactionRow | undefined) => [t?.nature, t?.natureSource, t?.autoNature];
+  const setNature = (fp: string, body: unknown) =>
+    req(`/api/natures/${fp}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  test("parcela é fixa; o resto é variável; não-gasto não tem natureza", async () => {
+    applyNature(db);
+    const m = await txs("2026-09");
+    assert.deepEqual(view(m.get("fp-a")), ["fixed", "detected", "fixed"]);
+    assert.deepEqual(view(m.get("fp-b")), ["variable", "default", "variable"]);
+    assert.deepEqual(view(m.get("fp-c")), ["variable", "default", "variable"]); // estorno
+    assert.deepEqual(view(m.get("fp-e")), [null, null, null]); // card_payment
+    assert.equal((await json<SummaryResponse>("/api/summary?month=2026-09")).fixedExpenseCents, 30_000);
+  });
+
+  test("marcação vale para a chave, inclusive transações que chegam depois", async () => {
+    let r = await setNature("fp-b", { nature: "fixed" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { recurrenceKey: "SINTETICAFPB", nature: "fixed", matchCount: 1 } satisfies NatureResponse);
+    assert.deepEqual(view((await txs("2026-09")).get("fp-b")), ["fixed", "manual", "variable"]);
+    assert.equal((await json<SummaryResponse>("/api/summary?month=2026-09")).fixedExpenseCents, 50_000);
+
+    // "próximo mês": mesma descrição, novo fingerprint, depois do sync
+    db.prepare(`
+      INSERT INTO transactions (account_id, fingerprint, date, local_date, description, amount_cents_raw, direction,
+        amount_cents_abs, status, kind, synced_at)
+      VALUES (2, 'fp-b-next', '2026-10-11T15:00:00.000Z', '2026-10-11', 'Sintética fp-b', 20000, 'OUT', 20000, 'POSTED', 'expense', ?)`).run(
+      NOW.toISOString(),
+    );
+    applyNature(db);
+    assert.deepEqual(view((await txs("2026-10")).get("fp-b-next")), ["fixed", "manual", "variable"]);
+
+    r = await setNature("fp-b-next", { nature: null });
+    assert.deepEqual(await r.json(), { recurrenceKey: "SINTETICAFPB", nature: null, matchCount: 2 });
+    assert.deepEqual(view((await txs("2026-09")).get("fp-b")), ["variable", "default", "variable"]);
+
+    // marcar parcela como variável sobrepõe a detecção
+    await setNature("fp-a", { nature: "variable" });
+    assert.deepEqual(view((await txs("2026-09")).get("fp-a")), ["variable", "manual", "fixed"]);
+    await setNature("fp-a", { nature: null });
+
+    db.prepare("DELETE FROM transactions WHERE fingerprint = 'fp-b-next'").run();
+  });
+
+  test("validação: 404, não-gasto, valor e campos desconhecidos", async () => {
+    assert.equal((await setNature("nao-existe", { nature: "fixed" })).status, 404);
+    assert.equal((await setNature("fp-e", { nature: "fixed" })).status, 400); // card_payment
+    for (const b of [{ nature: "fixo" }, { nature: 1 }, {}, { nature: "fixed", foo: 1 }]) {
+      assert.equal((await setNature("fp-b", b)).status, 400, JSON.stringify(b));
+    }
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM nature_marks").get(), { n: 0 });
   });
 });

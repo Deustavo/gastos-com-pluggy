@@ -371,6 +371,8 @@ select:focus, input[type="text"]:focus { outline: none; border-color: var(--acce
 .note { display: block; color: var(--muted); font-size: 12px; }
 .cat-select { width: 100%; min-width: 140px; }
 .cat-select.overridden { border-color: var(--accent); }
+.nature-cell { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+.nature-reset { position: absolute; left: 100%; margin-left: 2px; }
 .new-cat { display: flex; gap: 4px; align-items: center; }
 .new-cat input { width: 140px; }
 .row-error { color: var(--bad-ink); font-size: 12px; margin-top: 2px; }

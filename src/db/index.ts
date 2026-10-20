@@ -34,6 +34,18 @@ const MIGRATIONS: ((db: Db) => void)[] = [
         PRIMARY KEY (provider, name)
       );`);
   },
+  // 2: natureza do gasto (fixo/variável); a marcação manual vale para a chave de recorrência
+  (db) => {
+    addColumn(db, "transactions", "recurrence_key", "TEXT");
+    addColumn(db, "transactions", "auto_nature", "TEXT");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS nature_marks (
+        recurrence_key TEXT PRIMARY KEY,
+        nature TEXT NOT NULL CHECK (nature IN ('fixed', 'variable')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_transactions_recurrence_key ON transactions (recurrence_key);`);
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

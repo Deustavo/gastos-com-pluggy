@@ -1,5 +1,7 @@
 // Formatação pt-BR: moeda a partir de centavos, datas dd/mm/aaaa, meses "out/26".
 
+import type { Nature } from "../../src/api/contract.ts";
+
 const TZ = "America/Sao_Paulo";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -80,6 +82,11 @@ export function currentMonth(): string {
   const m = parts.find((p) => p.type === "month")?.value ?? "01";
   return `${y}-${m}`;
 }
+
+export const NATURE_LABEL: Record<Nature, string> = {
+  fixed: "Fixo",
+  variable: "Variável",
+};
 
 export const KIND_LABEL: Record<string, string> = {
   expense: "gasto",

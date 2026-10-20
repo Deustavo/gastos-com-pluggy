@@ -4,6 +4,8 @@ import type {
   ApiError,
   CategoriesResponse,
   ConnectionsResponse,
+  NatureRequest,
+  NatureResponse,
   OverrideRequest,
   CategoryRule,
   OverrideResponse,
@@ -85,6 +87,8 @@ export const api = {
   connections: () => request<ConnectionsResponse>("GET", "/api/connections"),
   override: (fingerprint: string, body: OverrideRequest) =>
     request<OverrideResponse>("PATCH", `/api/overrides/${encodeURIComponent(fingerprint)}`, body),
+  nature: (fingerprint: string, body: NatureRequest) =>
+    request<NatureResponse>("PATCH", `/api/natures/${encodeURIComponent(fingerprint)}`, body),
   sync: () => request<SyncResponse>("POST", "/api/sync"),
   rules: () => request<RulesResponse>("GET", "/api/rules"),
   createRule: (body: RuleCreateRequest) => request<CategoryRule>("POST", "/api/rules", body),

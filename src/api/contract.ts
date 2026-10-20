@@ -2,10 +2,11 @@
 // Só tipos: o front importa com `import type`, sem puxar código do servidor.
 // Valores em centavos; meses em "YYYY-MM" e dias em "YYYY-MM-DD" (America/Sao_Paulo).
 
+import type { Nature } from "../categorize/nature.ts";
 import type { Kind } from "../sync/classify.ts";
 import type { SyncReport } from "../sync/sync.ts";
 
-export type { Kind, SyncReport };
+export type { Kind, Nature, SyncReport };
 
 // Regras de "gasto" usadas em todo o dashboard:
 // gasto = Σ expense (OUT) − Σ refund (IN), ignorando linhas com ignored = true.
@@ -15,6 +16,7 @@ export type { Kind, SyncReport };
 export interface SummaryResponse {
   month: string;
   expenseCents: number;
+  fixedExpenseCents: number; // parte do gasto marcada como fixa; o resto (expenseCents − fixed) é variável
   incomeCents: number;
   pendingExpenseCents: number; // gasto PENDING do mês ("a confirmar")
   pendingCount: number;
@@ -42,6 +44,10 @@ export interface TransactionRow {
   ignored: boolean;
   note: string | null;
   installment: { number: number; total: number } | null;
+  // Fixo/variável: só para expense e refund (null nos outros kinds)
+  nature: Nature | null;
+  natureSource: NatureSource | null;
+  autoNature: Nature | null; // o que valeria sem a marcação manual
 }
 export interface TransactionsResponse {
   items: TransactionRow[]; // local_date desc
@@ -87,6 +93,23 @@ export interface OverrideResponse {
   category: string | null;
   ignored: boolean;
   note: string | null;
+}
+
+// De onde veio a natureza: marcação manual, detecção automática (repete todo mês com valor
+// parecido, ou é parcela) ou o padrão (variável).
+export type NatureSource = "manual" | "detected" | "default";
+
+// PATCH /api/natures/:fingerprint — marca o estabelecimento da transação (a chave de recorrência,
+// ex.: "Amazon Ad Free For Pri" e "AMAZON AD FREE FOR PRI SAO PAULO     BRA" são a mesma), não só a linha: vale para todos os
+// meses, inclusive os que ainda vão sincronizar. nature null apaga a marcação (volta à detecção).
+// 404 se o fingerprint não existir; 400 se a transação não for gasto/estorno ou não tiver chave.
+export interface NatureRequest {
+  nature: Nature | null;
+}
+export interface NatureResponse {
+  recurrenceKey: string;
+  nature: Nature | null; // marcação gravada
+  matchCount: number; // transações com a mesma chave
 }
 
 // POST /api/sync → roda o mesmo SyncService do `npm run sync`.

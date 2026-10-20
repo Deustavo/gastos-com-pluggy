@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import type { CategoryRule, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
+import type { CategoryRule, Nature, NatureRequest, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
 import { MAX_CATEGORY } from "../api.ts";
-import { formatDay, KIND_LABEL } from "../format.ts";
+import { formatDay, KIND_LABEL, NATURE_LABEL } from "../format.ts";
 import { useMoney } from "../privacy.ts";
 import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
@@ -12,6 +12,7 @@ export interface TxFilters {
   category: string | undefined;
   account: number | undefined;
   status: StatusFilter;
+  nature: Nature | undefined;
   showNonExpense: boolean;
 }
 
@@ -23,6 +24,7 @@ interface Props {
   filters: TxFilters;
   onFiltersChange: (f: TxFilters) => void;
   onOverride: (fingerprint: string, body: OverrideRequest) => Promise<void>;
+  onNature: (fingerprint: string, body: NatureRequest) => Promise<void>;
   rules: CategoryRule[] | undefined; // para o tooltip da origem da categoria
   onCreateRule: (row: TransactionRow) => void;
 }
@@ -39,6 +41,7 @@ export function TransactionsTable({
   filters,
   onFiltersChange,
   onOverride,
+  onNature,
   rules,
   onCreateRule,
 }: Props) {
@@ -66,12 +69,15 @@ export function TransactionsTable({
       (filters.showNonExpense || !NON_EXPENSE.has(r.kind)) &&
       (!filters.category || r.category === filters.category) &&
       (filters.account === undefined || r.accountId === filters.account) &&
-      (filters.status === "ALL" || r.status === filters.status),
+      (filters.status === "ALL" || r.status === filters.status) &&
+      (!filters.nature || r.nature === filters.nature),
   );
   const hiddenNonExpense = filters.showNonExpense ? 0 : all.filter((r) => NON_EXPENSE.has(r.kind)).length;
-  const anyFilter = !!filters.category || filters.account !== undefined || filters.status !== "ALL";
+  const anyFilter =
+    !!filters.category || filters.account !== undefined || filters.status !== "ALL" || filters.nature !== undefined;
 
   const set = (patch: Partial<TxFilters>) => onFiltersChange({ ...filters, ...patch });
+  const clearFilters = () => set({ category: undefined, account: undefined, status: "ALL", nature: undefined });
 
   const toolbar = (
     <div className="filters">
@@ -108,16 +114,20 @@ export function TransactionsTable({
           <option value="PENDING">A confirmar</option>
         </select>
       </label>
+      <label>
+        Tipo
+        <select value={filters.nature ?? ""} onChange={(e) => set({ nature: (e.target.value || undefined) as Nature | undefined })}>
+          <option value="">Todos</option>
+          <option value="fixed">Fixos</option>
+          <option value="variable">Variáveis</option>
+        </select>
+      </label>
       <label className="check">
         <input type="checkbox" checked={filters.showNonExpense} onChange={(e) => set({ showNonExpense: e.target.checked })} />
         Mostrar transferências, faturas e receitas
       </label>
       {anyFilter && (
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => set({ category: undefined, account: undefined, status: "ALL" })}
-        >
+        <button type="button" className="link-btn" onClick={clearFilters}>
           <Icon name="x" size={12} /> limpar filtros
         </button>
       )}
@@ -153,7 +163,7 @@ export function TransactionsTable({
           {(anyFilter || hiddenNonExpense > 0) && (
             <div className="state-actions">
               {anyFilter && (
-                <button type="button" className="small-btn" onClick={() => set({ category: undefined, account: undefined, status: "ALL" })}>
+                <button type="button" className="small-btn" onClick={clearFilters}>
                   <Icon name="x" size={12} /> Limpar filtros
                 </button>
               )}
@@ -176,6 +186,7 @@ export function TransactionsTable({
                 <th>Conta</th>
                 <th>Categoria</th>
                 <th className="num">Valor</th>
+                <th className="center">Fixo</th>
                 <th className="center">Ignorar</th>
               </tr>
             </thead>
@@ -187,6 +198,7 @@ export function TransactionsTable({
                   categories={categories}
                   rule={r.ruleId === null ? undefined : rulesById.get(r.ruleId)}
                   onOverride={onOverride}
+                  onNature={onNature}
                   onCreateRule={onCreateRule}
                 />
               ))}
@@ -207,12 +219,14 @@ function TxRow({
   categories,
   rule,
   onOverride,
+  onNature,
   onCreateRule,
 }: {
   row: TransactionRow;
   categories: string[];
   rule: CategoryRule | undefined; // regra que casou (se a lista de regras estiver carregada)
   onOverride: (fingerprint: string, body: OverrideRequest) => Promise<void>;
+  onNature: (fingerprint: string, body: NatureRequest) => Promise<void>;
   onCreateRule: (row: TransactionRow) => void;
 }) {
   const money = useMoney();
@@ -223,19 +237,26 @@ function TxRow({
 
   const options = categories.includes(row.category) ? categories : [...categories, row.category].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-  async function save(body: OverrideRequest) {
+  async function run(action: () => Promise<void>) {
     setSaving(true);
     setErr(undefined);
     try {
-      await onOverride(row.fingerprint, body);
-      setCreating(false);
-      setDraft("");
+      await action();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   }
+
+  const save = (body: OverrideRequest) =>
+    run(async () => {
+      await onOverride(row.fingerprint, body);
+      setCreating(false);
+      setDraft("");
+    });
+
+  const saveNature = (nature: Nature | null) => run(() => onNature(row.fingerprint, { nature }));
 
   function onSelect(value: string) {
     if (value === NEW) {
@@ -353,16 +374,71 @@ function TxRow({
       <td className={`num nowrap ${amountClass}`} data-label="Valor">
         {money.cents(row.amountCents)}
       </td>
+      <td className="center" data-label="Fixo">
+        <NatureCell row={row} saving={saving} onChange={saveNature} />
+      </td>
       <td className="center" data-label="Ignorar">
-        <input
-          type="checkbox"
-          checked={row.ignored}
-          disabled={saving}
-          onChange={(e) => void save({ ignored: e.target.checked })}
-          aria-label={row.ignored ? "Deixar de ignorar" : "Ignorar transação"}
-          title="Ignorar nos totais"
-        />
+        <label className="switch" title="Ignorar nos totais">
+          <input
+            type="checkbox"
+            checked={row.ignored}
+            disabled={saving}
+            onChange={(e) => void save({ ignored: e.target.checked })}
+            aria-label={row.ignored ? "Deixar de ignorar" : "Ignorar transação"}
+          />
+          <span className="switch-track" aria-hidden />
+        </label>
       </td>
     </tr>
+  );
+}
+
+// Toggle fixo/variável. A marcação vale para o estabelecimento (todos os meses), não só para esta linha.
+function NatureCell({
+  row,
+  saving,
+  onChange,
+}: {
+  row: TransactionRow;
+  saving: boolean;
+  onChange: (nature: Nature | null) => void;
+}) {
+  if (row.nature === null) return <span className="muted">—</span>;
+  const fixed = row.nature === "fixed";
+  const auto = row.autoNature ? NATURE_LABEL[row.autoNature].toLowerCase() : undefined;
+  const title =
+    row.natureSource === "manual"
+      ? `${NATURE_LABEL[row.nature]}: marcado à mão para este estabelecimento em todos os meses`
+      : row.natureSource === "detected"
+        ? row.installment
+          ? "Fixo: parcela"
+          : "Fixo: detectado, se repete todo mês com valor parecido"
+        : "Variável. Marcar como fixo vale para este estabelecimento em todos os meses";
+
+  return (
+    <span className="nature-cell">
+      <label className="switch" title={title}>
+        <input
+          type="checkbox"
+          checked={fixed}
+          disabled={saving}
+          onChange={(e) => onChange(e.target.checked ? "fixed" : "variable")}
+          aria-label={fixed ? "Marcar como variável" : "Marcar como fixo"}
+        />
+        <span className="switch-track" aria-hidden />
+      </label>
+      {row.natureSource === "manual" && (
+        <button
+          type="button"
+          className="link-btn nature-reset"
+          disabled={saving}
+          onClick={() => onChange(null)}
+          title={`Voltar ao automático${auto ? ` (${auto})` : ""}`}
+          aria-label="Voltar ao automático"
+        >
+          <Icon name="x" size={12} />
+        </button>
+      )}
+    </span>
   );
 }

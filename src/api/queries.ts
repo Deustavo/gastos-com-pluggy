@@ -8,6 +8,9 @@ import type { Kind } from "../sync/classify.ts";
 import type {
   CategoriesResponse,
   CategoryRule,
+  Nature,
+  NatureResponse,
+  NatureSource,
   CategorySource,
   ConnectionHealth,
   ConnectionsResponse,
@@ -39,12 +42,13 @@ export function getSummary(db: Db, month: string): SummaryResponse {
     .prepare(`
       SELECT
         COALESCE(SUM(CASE WHEN status != 'PENDING' THEN ${EXPENSE_SQL} END), 0) AS expense,
+        COALESCE(SUM(CASE WHEN status != 'PENDING' AND nature = 'fixed' THEN ${EXPENSE_SQL} END), 0) AS fixed,
         COALESCE(SUM(CASE WHEN status != 'PENDING' THEN ${INCOME_SQL} END), 0) AS income,
         COALESCE(SUM(CASE WHEN status = 'PENDING' THEN ${EXPENSE_SQL} END), 0) AS pending,
         COALESCE(SUM(status = 'PENDING' AND kind IN ('expense', 'refund')), 0) AS pendingCount
       FROM v_transactions
       WHERE substr(local_date, 1, 7) = ? AND ignored = 0`)
-    .get(month) as { expense: number; income: number; pending: number; pendingCount: number };
+    .get(month) as { expense: number; fixed: number; income: number; pending: number; pendingCount: number };
 
   const byCategory = db
     .prepare(`
@@ -73,6 +77,7 @@ export function getSummary(db: Db, month: string): SummaryResponse {
   return {
     month,
     expenseCents: totals.expense,
+    fixedExpenseCents: totals.fixed,
     incomeCents: totals.income,
     pendingExpenseCents: totals.pending,
     pendingCount: totals.pendingCount,
@@ -111,6 +116,9 @@ interface TxRow {
   override_note: string | null;
   installment_number: number | null;
   total_installments: number | null;
+  nature: Nature | null;
+  nature_source: NatureSource | null;
+  auto_nature: Nature | null;
 }
 
 export function accountLabel(type: "BANK" | "CREDIT", last4: string | null, name: string | null, id: number): string {
@@ -138,7 +146,8 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
         t.local_date, t.description, t.direction, t.amount_cents_abs, t.kind, t.status,
         ${CATEGORY_SQL} AS category, t.category_source, t.rule_id, t.provider_category_pt AS provider_category,
         t.override_category, t.ignored,
-        t.override_note, t.installment_number, t.total_installments
+        t.override_note, t.installment_number, t.total_installments, t.nature, t.nature_source,
+        CASE WHEN t.nature IS NOT NULL THEN COALESCE(t.auto_nature, 'variable') END AS auto_nature
       FROM v_transactions t JOIN accounts a ON a.id = t.account_id
       WHERE ${where.join(" AND ")}
       ORDER BY t.local_date DESC, t.date DESC, t.id DESC`)
@@ -166,6 +175,9 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
         r.installment_number !== null && r.total_installments !== null
           ? { number: r.installment_number, total: r.total_installments }
           : null,
+      nature: r.nature,
+      natureSource: r.nature_source,
+      autoNature: r.auto_nature,
     }),
   );
   return { items };
@@ -248,6 +260,28 @@ export function saveOverride(db: Db, o: OverrideResponse): void {
     ON CONFLICT (fingerprint) DO UPDATE SET category = excluded.category, ignored = excluded.ignored, note = excluded.note`).run(
     o.fingerprint, o.category, o.ignored ? 1 : 0, o.note,
   );
+}
+
+// ---- Natureza (fixo/variável) ----
+
+// Chave de recorrência de um gasto/estorno; undefined se não existir, null se não for marcável.
+export function natureTarget(db: Db, fingerprint: string): { key: string | null } | undefined {
+  const r = db
+    .prepare("SELECT recurrence_key, kind FROM transactions WHERE fingerprint = ? LIMIT 1")
+    .get(fingerprint) as { recurrence_key: string | null; kind: string | null } | undefined;
+  if (!r) return undefined;
+  return { key: r.kind === "expense" || r.kind === "refund" ? r.recurrence_key : null };
+}
+
+// Grava (ou apaga, com null) a marcação da chave; não precisa recalcular nada, a view junta na leitura.
+export function saveNatureMark(db: Db, key: string, nature: Nature | null, now: Date): NatureResponse {
+  if (nature === null) db.prepare("DELETE FROM nature_marks WHERE recurrence_key = ?").run(key);
+  else
+    db.prepare(`
+      INSERT INTO nature_marks (recurrence_key, nature, created_at) VALUES (?, ?, ?)
+      ON CONFLICT (recurrence_key) DO UPDATE SET nature = excluded.nature`).run(key, nature, now.toISOString());
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE recurrence_key = ?").get(key) as { n: number };
+  return { recurrenceKey: key, nature, matchCount: n };
 }
 
 // ---- Regras de categorização ----

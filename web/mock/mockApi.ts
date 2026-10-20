@@ -7,6 +7,8 @@ import type {
   CategoryRule,
   CategorySource,
   ConnectionsResponse,
+  Nature,
+  NatureRequest,
   OverrideRequest,
   RuleCreateRequest,
   RulePreviewRequest,
@@ -21,6 +23,9 @@ import { EXTRA_CATEGORIES } from "../../src/categorize/categories.ts";
 
 const CATS = ["Mercado", "Restaurantes", "Transporte", "Moradia", "Lazer", "Saúde", ...EXTRA_CATEGORIES];
 const overrides = new Map<string, { category?: string | null; ignored?: boolean }>();
+// Marcação fixo/variável por descrição (no app real, pela chave de recorrência).
+const natureMarks = new Map<string, Nature>();
+const FIXED_MERCHANTS = new Set(["NETFLIX.COM", "SPOTIFY", "CONDOMINIO RES JARDIM"]);
 let syncing = false;
 
 // Descrições sintéticas no estilo de extrato/fatura, com a categoria "do fornecedor".
@@ -76,6 +81,10 @@ function rowsFor(month: string, excludeRuleId?: number): TransactionRow[] {
     const cat = ov?.category ?? rule?.category ?? providerCategory ?? "Sem categoria";
     const categorySource: CategorySource =
       ov?.category != null ? "override" : rule ? "rule" : providerCategory ? "provider" : "none";
+    const installment = i % 5 === 0 ? { number: (i % 4) + 1, total: 10 } : null;
+    const hasNature = kind === "expense" || kind === "refund";
+    const autoNature: Nature = installment || FIXED_MERCHANTS.has(merchant.description) ? "fixed" : "variable";
+    const mark = natureMarks.get(merchant.description);
     rows.push({
       id: seed * 100 + i,
       fingerprint: fp,
@@ -93,7 +102,10 @@ function rowsFor(month: string, excludeRuleId?: number): TransactionRow[] {
       overridden: ov?.category != null,
       ignored: ov?.ignored ?? false,
       note: null,
-      installment: i % 5 === 0 ? { number: (i % 4) + 1, total: 10 } : null,
+      installment,
+      nature: hasNature ? (mark ?? autoNature) : null,
+      natureSource: hasNature ? (mark ? "manual" : autoNature === "fixed" ? "detected" : "default") : null,
+      autoNature: hasNature ? autoNature : null,
     });
   }
   return rows;
@@ -109,15 +121,17 @@ function totals(month: string) {
   const rows = rowsFor(month).filter((r) => !r.ignored && r.status === "POSTED");
   const byCat = new Map<string, number>();
   let expense = 0;
+  let fixed = 0;
   let income = 0;
   for (const r of rows) {
     if (r.kind === "expense" || r.kind === "refund") {
       expense -= r.amountCents;
+      if (r.nature === "fixed") fixed -= r.amountCents;
       byCat.set(r.category, (byCat.get(r.category) ?? 0) - r.amountCents);
     }
     if (r.kind === "income") income += r.amountCents;
   }
-  return { expense, income, byCat };
+  return { expense, fixed, income, byCat };
 }
 
 function summary(month: string): SummaryResponse {
@@ -126,6 +140,7 @@ function summary(month: string): SummaryResponse {
   return {
     month,
     expenseCents: t.expense,
+    fixedExpenseCents: t.fixed,
     incomeCents: t.income,
     pendingExpenseCents: pend.reduce((n, r) => n - r.amountCents, 0),
     pendingCount: pend.length,
@@ -282,6 +297,16 @@ export function mockApi(): Plugin {
           if ("ignored" in body) cur.ignored = body.ignored;
           overrides.set(fp, cur);
           return send(200, { fingerprint: fp, category: cur.category ?? null, ignored: cur.ignored ?? false, note: null });
+        }
+        if (url.pathname.startsWith("/api/natures/") && req.method === "PATCH") {
+          const fp = decodeURIComponent(url.pathname.slice("/api/natures/".length));
+          const row = allRows().find((r) => r.fingerprint === fp);
+          if (!row) return send(404, { error: "transação não encontrada" });
+          const { nature } = (await readBody()) as NatureRequest;
+          if (nature === null) natureMarks.delete(row.description);
+          else natureMarks.set(row.description, nature);
+          const matchCount = allRows().filter((r) => r.description === row.description).length;
+          return send(200, { recurrenceKey: row.description, nature, matchCount });
         }
         if (url.pathname === "/api/sync" && req.method === "POST") {
           if (syncing) return send(409, { error: "sync em andamento" });

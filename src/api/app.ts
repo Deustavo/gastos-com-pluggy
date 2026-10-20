@@ -10,8 +10,9 @@ import type { Kind } from "../sync/classify.ts";
 import { toLocalDate } from "../sync/dates.ts";
 import type { SyncReport } from "../sync/sync.ts";
 import { canonicalCategory, parseCategory } from "../categorize/categories.ts";
+import { applyNature, NATURES } from "../categorize/nature.ts";
 import { applyRules, compileRule } from "../categorize/rules.ts";
-import type { ApiError, OverrideRequest, OverrideResponse, RuleCreateRequest } from "./contract.ts";
+import type { ApiError, Nature, OverrideRequest, OverrideResponse, RuleCreateRequest } from "./contract.ts";
 import {
   deleteRule,
   fingerprintExists,
@@ -23,9 +24,11 @@ import {
   listConnections,
   listRules,
   listTransactions,
+  natureTarget,
   previewRule,
   reorderRules,
   ruleIds,
+  saveNatureMark,
   saveOverride,
   updateRule,
 } from "./queries.ts";
@@ -205,9 +208,24 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
   app.patch("/api/overrides/:fingerprint", async (c) => {
     const fp = c.req.param("fingerprint");
     if (!fingerprintExists(db, fp)) return fail(c, 404, "transação não encontrada");
-    const next = mergeOverride(db, getOverride(db, fp), await readJson(c));
+    const current = getOverride(db, fp);
+    const next = mergeOverride(db, current, await readJson(c));
     saveOverride(db, next);
+    if (next.ignored !== current.ignored) applyNature(db); // a detecção desconsidera as ignoradas
     return c.json(next);
+  });
+
+  app.patch("/api/natures/:fingerprint", async (c) => {
+    const target = natureTarget(db, c.req.param("fingerprint"));
+    if (!target) return fail(c, 404, "transação não encontrada");
+    const req = await readJson(c);
+    rejectExtra(req, ["nature"]);
+    const nature = req.nature;
+    if (nature !== null && !NATURES.includes(nature as Nature)) {
+      throw new BadRequest(`nature deve ser um de: ${NATURES.join(", ")}, ou null`);
+    }
+    if (target.key === null) throw new BadRequest("só gastos e estornos com descrição podem ser marcados como fixo ou variável");
+    return c.json(saveNatureMark(db, target.key, nature as Nature | null, now()));
   });
 
   // Regras: toda mudança recalcula rule_id/rule_category de todas as transações

@@ -23,7 +23,11 @@ export function SummaryCards({ summary, loading, error }: Props) {
           Gasto do mês
         </div>
         <div className="card-value">{value((s) => money.cents(s.expenseCents))}</div>
-        <div className="card-sub">confirmado, sem transferências nem faturas</div>
+        <div className="card-sub" title="Confirmado, sem transferências nem faturas">
+          {summary
+            ? `fixo ${money.cents(summary.fixedExpenseCents)} · variável ${money.cents(summary.expenseCents - summary.fixedExpenseCents)}`
+            : "confirmado, sem transferências nem faturas"}
+        </div>
       </div>
       <div className="card card-income">
         <div className="card-label">

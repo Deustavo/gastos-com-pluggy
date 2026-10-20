@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { OverrideRequest, TransactionRow } from "../../src/api/contract.ts";
+import type { NatureRequest, OverrideRequest, TransactionRow } from "../../src/api/contract.ts";
 import { api } from "./api.ts";
 import { CategoryChart } from "./components/CategoryChart.tsx";
 import { ConnectionsPanel } from "./components/ConnectionsPanel.tsx";
@@ -26,6 +26,7 @@ export function App() {
     category: undefined,
     account: undefined,
     status: "ALL",
+    nature: undefined,
     showNonExpense: false,
   });
 
@@ -39,6 +40,11 @@ export function App() {
 
   const onOverride = useCallback(async (fingerprint: string, body: OverrideRequest) => {
     await api.override(fingerprint, body);
+    setDataVersion((v) => v + 1);
+  }, []);
+
+  const onNature = useCallback(async (fingerprint: string, body: NatureRequest) => {
+    await api.nature(fingerprint, body);
     setDataVersion((v) => v + 1);
   }, []);
 
@@ -88,6 +94,7 @@ export function App() {
             filters={filters}
             onFiltersChange={setFilters}
             onOverride={onOverride}
+            onNature={onNature}
             rules={rules.data?.rules}
             onCreateRule={onCreateRule}
           />

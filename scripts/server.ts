@@ -2,6 +2,7 @@
 
 import { serve } from "@hono/node-server";
 import { createApp } from "../src/api/app.ts";
+import { applyNature } from "../src/categorize/nature.ts";
 import { setupProviders } from "../src/config.ts";
 import { openDb } from "../src/db/index.ts";
 import { SyncService } from "../src/sync/sync.ts";
@@ -13,6 +14,8 @@ function main(): void {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`PORT inválida: ${process.env.PORT}`);
 
   const db = openDb();
+  // Recalcula a natureza (fixo/variável) ao subir: cobre banco recém-migrado e mudança nos critérios de detecção
+  applyNature(db);
   const sync = new SyncService(db, setupProviders(db));
   const app = createApp({ db, runSync: () => sync.run() });
 

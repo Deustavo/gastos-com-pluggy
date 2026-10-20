@@ -330,12 +330,13 @@ test("migração: banco da fase 2 e banco novo chegam ao mesmo schema; dados pre
     const migrated = openDb(oldFile);
     const fresh = openDb(path.join(dir, "new.db"));
     try {
-      assert.equal(SCHEMA_VERSION, 1);
+      assert.equal(SCHEMA_VERSION, 2);
       assert.equal(migrated.pragma("user_version", { simple: true }), SCHEMA_VERSION);
       assert.equal(fresh.pragma("user_version", { simple: true }), SCHEMA_VERSION);
       assert.deepEqual(schemaOf(migrated), schemaOf(fresh));
       const cols = (migrated.pragma("table_info(transactions)") as { name: string }[]).map((c) => c.name);
       assert.ok(cols.includes("rule_id") && cols.includes("rule_category"));
+      assert.ok(cols.includes("recurrence_key") && cols.includes("auto_nature"));
 
       assert.deepEqual(
         migrated.prepare("SELECT description, kind, effective_category, category_source, ignored, rule_id FROM v_transactions").all(),

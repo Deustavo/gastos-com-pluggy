@@ -1,6 +1,7 @@
 // Orquestra o sync: provider → SQLite, reclassificação global e integridade.
 // Sem saída de terminal: devolve um SyncReport (o CLI e a Fase 2 decidem como mostrar).
 
+import { applyNature } from "../categorize/nature.ts";
 import { applyRules } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Account, AccountType, Bill, DataProvider, Direction, Transaction } from "../providers/types.ts";
@@ -99,6 +100,7 @@ export class SyncService {
 
     this.#reclassifyAll();
     applyRules(this.#db);
+    applyNature(this.#db);
 
     for (const c of connections) for (const a of c.accounts) Object.assign(a, this.#accountStats(a.accountId));
 
