@@ -130,7 +130,7 @@ function summary(month: string): SummaryResponse {
     pendingCount: pend.length,
     byCategory: [...t.byCat.entries()].map(([category, expenseCents]) => ({ category, expenseCents })).sort((a, b) => b.expenseCents - a.expenseCents),
     monthly: Array.from({ length: 12 }, (_, i) => {
-      const m = addMonths(month, i - 11);
+      const m = addMonths(`${month.slice(0, 4)}-01`, i);
       const tt = totals(m);
       return { month: m, expenseCents: tt.expense, incomeCents: tt.income };
     }),

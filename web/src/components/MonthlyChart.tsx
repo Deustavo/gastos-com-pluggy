@@ -22,13 +22,13 @@ export function MonthlyChart({ summary, loading, error, month, onSelect }: Props
 
   return (
     <Panel
-      title="Evolução em 12 meses"
+      title="Este ano"
       icon="chart"
       className="panel-monthly"
       loading={loading && !summary}
       refreshing={loading && !!summary}
       error={error}
-      empty={summary && !hasData ? "Sem movimentação nos últimos 12 meses." : false}
+      empty={summary && !hasData ? "Sem movimentação neste ano." : false}
     >
       {summary && hasData && (
         <>

@@ -60,8 +60,8 @@ const TXS: Tx[] = [
   // UTC já em outubro, mas o dia local ainda é setembro
   { fp: "fp-l", account: 3, localDate: "2026-09-30", date: "2026-10-01T02:00:00.000Z", abs: 1_000, direction: "OUT", kind: "expense", category: "" },
   { fp: "fp-m", account: 1, localDate: "2026-03-03", abs: 1_234, direction: "OUT", kind: "expense", category: "Food" },
-  { fp: "fp-n", account: 1, localDate: "2025-09-30", abs: 777, direction: "OUT", kind: "expense", category: "Food" }, // fora dos 12 meses
-  { fp: "fp-o", account: 1, localDate: "2026-10-01", abs: 500, direction: "OUT", kind: "expense", category: "Food" }, // depois do mês
+  { fp: "fp-n", account: 1, localDate: "2025-09-30", abs: 777, direction: "OUT", kind: "expense", category: "Food" }, // fora do ano
+  { fp: "fp-o", account: 1, localDate: "2026-10-01", abs: 500, direction: "OUT", kind: "expense", category: "Food" }, // depois do mês, mas no mesmo ano
 ];
 
 function seed(db: Db): void {
@@ -134,15 +134,16 @@ describe("GET /api/summary", () => {
     ]);
   });
 
-  test("12 meses até `month`, em ordem, com zeros", async () => {
+  test("jan–dez do ano de `month`, em ordem, com zeros", async () => {
     const s = await json<SummaryResponse>("/api/summary?month=2026-09");
     assert.equal(s.monthly.length, 12);
-    assert.equal(s.monthly[0]?.month, "2025-10");
-    assert.equal(s.monthly[11]?.month, "2026-09");
+    assert.equal(s.monthly[0]?.month, "2026-01");
+    assert.equal(s.monthly[11]?.month, "2026-12");
     const nonZero = s.monthly.filter((m) => m.expenseCents || m.incomeCents);
     assert.deepEqual(nonZero, [
       { month: "2026-03", expenseCents: 1_234, incomeCents: 0 },
       { month: "2026-09", expenseCents: 50_000, incomeCents: 900_000 },
+      { month: "2026-10", expenseCents: 500, incomeCents: 0 },
     ]);
   });
 

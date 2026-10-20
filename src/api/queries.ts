@@ -55,14 +55,14 @@ export function getSummary(db: Db, month: string): SummaryResponse {
       ORDER BY expenseCents DESC, category`)
     .all(month) as SummaryResponse["byCategory"];
 
-  const first = addMonths(month, -11);
+  const first = `${month.slice(0, 4)}-01`;
   const rows = db
     .prepare(`
       SELECT substr(local_date, 1, 7) AS month, SUM(${EXPENSE_SQL}) AS expenseCents, SUM(${INCOME_SQL}) AS incomeCents
       FROM v_transactions
       WHERE local_date >= ? AND local_date < ? AND ignored = 0 AND status != 'PENDING'
       GROUP BY 1`)
-    .all(`${first}-01`, `${addMonths(month, 1)}-01`) as SummaryResponse["monthly"];
+    .all(`${first}-01`, `${addMonths(first, 12)}-01`) as SummaryResponse["monthly"];
   const byMonth = new Map(rows.map((r) => [r.month, r]));
   const monthly = Array.from({ length: 12 }, (_, i) => {
     const m = addMonths(first, i);

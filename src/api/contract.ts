@@ -19,7 +19,7 @@ export interface SummaryResponse {
   pendingExpenseCents: number; // gasto PENDING do mês ("a confirmar")
   pendingCount: number;
   byCategory: { category: string; expenseCents: number }[]; // desc; refund abate da própria categoria
-  monthly: { month: string; expenseCents: number; incomeCents: number }[]; // 12 meses até `month`, asc, meses sem dado = 0
+  monthly: { month: string; expenseCents: number; incomeCents: number }[]; // jan–dez do ano de `month`, asc, meses sem dado = 0
 }
 
 // GET /api/transactions?month=&category=&account=&status=&kind=
