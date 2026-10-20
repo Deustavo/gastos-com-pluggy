@@ -3,8 +3,10 @@ import type { CategoryRule, Nature, NatureRequest, OverrideRequest, TransactionR
 import { MAX_CATEGORY } from "../api.ts";
 import { formatDay, KIND_LABEL, NATURE_LABEL } from "../format.ts";
 import { useMoney } from "../privacy.ts";
+import { BANK_NAME, BankIcon } from "./BankIcon.tsx";
 import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
+import { Tooltip } from "./Tooltip.tsx";
 
 export type StatusFilter = "ALL" | "POSTED" | "PENDING";
 
@@ -182,11 +184,11 @@ export function TransactionsTable({
             <thead>
               <tr>
                 <th>Data</th>
+                <th className="center">Conta</th>
+                <th className="center">Fixo</th>
                 <th>Descrição</th>
-                <th>Conta</th>
                 <th>Categoria</th>
                 <th className="num">Valor</th>
-                <th className="center">Fixo</th>
                 <th className="center">Ignorar</th>
               </tr>
             </thead>
@@ -296,6 +298,16 @@ function TxRow({
       <td className="nowrap" data-label="Data">
         {formatDay(row.localDate)}
       </td>
+      <td className="center" data-label="Conta">
+        <Tooltip content={row.bank ? `${BANK_NAME[row.bank]} · ${row.accountLabel}` : row.accountLabel}>
+          <span className="bank-cell" tabIndex={0} aria-label={row.accountLabel}>
+            <BankIcon bank={row.bank} />
+          </span>
+        </Tooltip>
+      </td>
+      <td className="center" data-label="Fixo">
+        <NatureCell row={row} saving={saving} onChange={saveNature} />
+      </td>
       <td className="desc" data-label="Descrição">
         <span>{row.description}</span>
         <span className="badges">
@@ -309,9 +321,6 @@ function TxRow({
           {row.ignored && <span className="badge">ignorada</span>}
         </span>
         {row.note && <span className="note">{row.note}</span>}
-      </td>
-      <td className="nowrap" data-label="Conta">
-        {row.accountLabel}
       </td>
       <td data-label="Categoria">
         {creating ? (
@@ -373,9 +382,6 @@ function TxRow({
       </td>
       <td className={`num nowrap ${amountClass}`} data-label="Valor">
         {money.cents(row.amountCents)}
-      </td>
-      <td className="center" data-label="Fixo">
-        <NatureCell row={row} saving={saving} onChange={saveNature} />
       </td>
       <td className="center" data-label="Ignorar">
         <label className="switch" title="Ignorar nos totais">

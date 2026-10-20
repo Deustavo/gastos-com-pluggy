@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
 import { createApp } from "../src/api/app.ts";
+import { bankFromName } from "../src/api/queries.ts";
 import { applyNature } from "../src/categorize/nature.ts";
 import type {
   CategoriesResponse,
@@ -206,6 +207,14 @@ describe("GET /api/transactions", () => {
       assert.equal((await req(`/api/transactions${q}`)).status, 400, q);
     }
   });
+});
+
+test("bankFromName: reconhece pelo nome da conta", () => {
+  assert.equal(bankFromName("Nu Pagamentos S.A. - Instituição de Pagamento"), "nubank");
+  assert.equal(bankFromName("BANCO INTER"), "inter");
+  assert.equal(bankFromName("PLATINUM"), null);
+  assert.equal(bankFromName("Internacional"), null);
+  assert.equal(bankFromName(null), null);
 });
 
 test("GET /api/categories: distintas, ordenadas, com 'Sem categoria'", async () => {

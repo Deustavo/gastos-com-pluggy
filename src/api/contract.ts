@@ -24,6 +24,8 @@ export interface SummaryResponse {
   monthly: { month: string; expenseCents: number; incomeCents: number }[]; // jan–dez do ano de `month`, asc, meses sem dado = 0
 }
 
+export type Bank = "nubank" | "inter";
+
 // GET /api/transactions?month=&category=&account=&status=&kind=
 // month obrigatório; os outros filtros são opcionais (account = id numérico; status = POSTED|PENDING).
 export interface TransactionRow {
@@ -31,6 +33,7 @@ export interface TransactionRow {
   fingerprint: string;
   accountId: number;
   accountLabel: string; // ex.: "Cartão ••••1234"
+  bank: Bank | null; // banco da conexão (o cartão herda o da conta); null se não reconhecido
   localDate: string;
   description: string;
   amountCents: number; // assinado do ponto de vista do dono: OUT negativo, IN positivo

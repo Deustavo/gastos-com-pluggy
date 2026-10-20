@@ -6,6 +6,7 @@ import { byPriority, compileRule, compileRules, loadRules, matchRule, type Compi
 import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
 import type {
+  Bank,
   CategoriesResponse,
   CategoryRule,
   Nature,
@@ -98,6 +99,7 @@ interface TxRow {
   id: number;
   fingerprint: string;
   account_id: number;
+  connection_id: number;
   account_type: "BANK" | "CREDIT";
   number_last4: string | null;
   account_name: string | null;
@@ -126,6 +128,28 @@ export function accountLabel(type: "BANK" | "CREDIT", last4: string | null, name
   return name || `Conta ${id}`;
 }
 
+// O conector (MeuPluggy) não diz o banco; ele sai do nome das contas da conexão.
+// Cartões têm nome de produto ("PLATINUM"), então valem pela conexão inteira.
+export function bankFromName(name: string | null): Bank | null {
+  if (!name) return null;
+  if (/nu pagamentos|nubank/i.test(name)) return "nubank";
+  if (/\binter\b/i.test(name)) return "inter";
+  return null;
+}
+
+function banksByConnection(db: Db): Map<number, Bank> {
+  const rows = db.prepare("SELECT connection_id, name FROM accounts ORDER BY id").all() as {
+    connection_id: number;
+    name: string | null;
+  }[];
+  const m = new Map<number, Bank>();
+  for (const r of rows) {
+    const bank = bankFromName(r.name);
+    if (bank && !m.has(r.connection_id)) m.set(r.connection_id, bank);
+  }
+  return m;
+}
+
 export function listTransactions(db: Db, f: TransactionFilters): TransactionsResponse {
   const where: string[] = [];
   const params: (string | number)[] = [];
@@ -142,7 +166,7 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
 
   const rows = db
     .prepare(`
-      SELECT t.id, t.fingerprint, t.account_id, a.type AS account_type, a.number_last4, a.name AS account_name,
+      SELECT t.id, t.fingerprint, t.account_id, a.connection_id, a.type AS account_type, a.number_last4, a.name AS account_name,
         t.local_date, t.description, t.direction, t.amount_cents_abs, t.kind, t.status,
         ${CATEGORY_SQL} AS category, t.category_source, t.rule_id, t.provider_category_pt AS provider_category,
         t.override_category, t.ignored,
@@ -152,6 +176,7 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
       WHERE ${where.join(" AND ")}
       ORDER BY t.local_date DESC, t.date DESC, t.id DESC`)
     .all(...params) as TxRow[];
+  const banks = banksByConnection(db);
 
   const items = rows.map(
     (r): TransactionRow => ({
@@ -159,6 +184,7 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
       fingerprint: r.fingerprint,
       accountId: r.account_id,
       accountLabel: accountLabel(r.account_type, r.number_last4, r.account_name, r.account_id),
+      bank: banks.get(r.connection_id) ?? null,
       localDate: r.local_date,
       description: r.description ?? "",
       amountCents: r.direction === "OUT" ? -r.amount_cents_abs : r.amount_cents_abs,

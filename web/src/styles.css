@@ -284,6 +284,18 @@ main > *:nth-child(5) { animation-delay: 0.2s; }
 .spinner.light { border-color: rgb(255 255 255 / 0.4); border-top-color: #fff; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Tooltip global (components/Tooltip.tsx): visual do .tooltip dos gráficos, renderizada no body com posição calculada em JS */
+.tooltip-anchor { display: inline-flex; }
+.tooltip-float {
+  position: fixed; z-index: 1000; max-width: 280px; pointer-events: none;
+  line-height: 1.4; white-space: normal;
+  animation: tooltip-in 0.12s ease-out;
+}
+.tooltip-float.below { animation-name: tooltip-in-below; }
+@keyframes tooltip-in { from { opacity: 0; transform: translateY(3px); } }
+@keyframes tooltip-in-below { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .tooltip-float { animation: none; } }
+
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .nowrap { white-space: nowrap; }
@@ -314,11 +326,12 @@ main > *:nth-child(5) { animation-delay: 0.2s; }
 .chart .recharts-bar-rectangle:hover path { filter: brightness(1.12); }
 
 .tooltip {
-  background: var(--surface-glass); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); background: var(--surface-glass); border: 1px solid var(--border); border-radius: var(--radius-sm);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   padding: 10px 12px; box-shadow: var(--shadow-lg); font-size: 13px;
 }
 .tooltip-title { font-weight: 600; margin-bottom: 2px; }
+.tooltip.tooltip-float { padding: 6px 10px; font-size: 12px; }
 .pie-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
 .pie-row .chart { width: 180px; height: 180px; flex: none; }
 .pie-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 12px; }
@@ -366,6 +379,8 @@ select:focus, input[type="text"]:focus { outline: none; border-color: var(--acce
 .tx-table tr.ignored td { opacity: 0.45; }
 .tx-table tr.ignored td:last-child { opacity: 1; }
 .tx-table tr.saving td { opacity: 0.6; }
+.bank-cell { display: inline-flex; vertical-align: middle; color: var(--muted); cursor: help; }
+.bank-icon { display: block; }
 .desc { min-width: 200px; }
 .badges { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
 .note { display: block; color: var(--muted); font-size: 12px; }
