@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
-import type { NatureRequest, OverrideRequest, TransactionRow } from "../../src/api/contract.ts";
+import type { Nature, NatureRequest, OverrideRequest, TransactionRow } from "../../src/api/contract.ts";
 import { api } from "./api.ts";
 import { CategoryChart } from "./components/CategoryChart.tsx";
 import { ConnectionsPanel } from "./components/ConnectionsPanel.tsx";
 import { Header } from "./components/Header.tsx";
 import { MonthlyChart } from "./components/MonthlyChart.tsx";
+import { NaturePieChart } from "./components/NaturePieChart.tsx";
 import { type RuleDraft, RulesPanel } from "./components/RulesPanel.tsx";
 import { SummaryCards } from "./components/SummaryCards.tsx";
 import { TransactionsTable, type TxFilters } from "./components/TransactionsTable.tsx";
@@ -64,6 +65,11 @@ export function App() {
     if (category) document.getElementById("transacoes")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const selectNature = (category: string | undefined, nature: Nature | undefined) => {
+    setFilters((f) => ({ ...f, category, nature }));
+    if (category) document.getElementById("transacoes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="app">
       <Header month={month} onMonthChange={setMonth} onSynced={() => setSyncVersion((v) => v + 1)} />
@@ -84,6 +90,19 @@ export function App() {
             month={month}
             onSelect={setMonth}
           />
+        </div>
+        <div className="grid-2">
+          {(["fixed", "variable"] as const).map((nature) => (
+            <NaturePieChart
+              key={nature}
+              nature={nature}
+              rows={txs.data?.items}
+              loading={txs.loading}
+              error={txs.error}
+              selected={filters}
+              onSelect={selectNature}
+            />
+          ))}
         </div>
         <div id="transacoes">
           <TransactionsTable
