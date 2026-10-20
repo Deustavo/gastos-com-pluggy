@@ -2,6 +2,7 @@
 // Leem de v_transactions (tradução, regras e overrides já aplicados).
 
 import { EXTRA_CATEGORIES, NO_CATEGORY } from "../categorize/categories.ts";
+import { median } from "../categorize/nature.ts";
 import { byPriority, compileRule, compileRules, loadRules, matchRule, type CompiledRule } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
@@ -10,7 +11,9 @@ import type {
   CategoriesResponse,
   CategoryRule,
   Nature,
+  NatureEntry,
   NatureResponse,
+  NaturesResponse,
   NatureSource,
   CategorySource,
   ConnectionHealth,
@@ -297,6 +300,73 @@ export function natureTarget(db: Db, fingerprint: string): { key: string | null 
     .get(fingerprint) as { recurrence_key: string | null; kind: string | null } | undefined;
   if (!r) return undefined;
   return { key: r.kind === "expense" || r.kind === "refund" ? r.recurrence_key : null };
+}
+
+export function natureKeyExists(db: Db, key: string): boolean {
+  return (
+    db.prepare("SELECT 1 FROM transactions WHERE recurrence_key = ? AND kind IN ('expense', 'refund') LIMIT 1").get(key) !==
+    undefined
+  );
+}
+
+// Um item por chave com gasto. Linhas da mesma chave podem ter auto_nature diferente (parcela
+// avulsa): a chave conta como detectada se qualquer uma for.
+export function listNatures(db: Db): NaturesResponse {
+  const rows = db
+    .prepare(`
+      SELECT recurrence_key AS key, description, ${CATEGORY_SQL} AS category, local_date, kind, amount_cents_abs,
+        auto_nature, installment_number, total_installments, CASE WHEN nature_source = 'manual' THEN nature END AS mark
+      FROM v_transactions
+      WHERE recurrence_key IS NOT NULL AND kind IN ('expense', 'refund') AND ignored = 0
+      ORDER BY local_date DESC, date DESC, id DESC`)
+    .all() as {
+    key: string;
+    description: string | null;
+    category: string;
+    local_date: string;
+    kind: "expense" | "refund";
+    amount_cents_abs: number;
+    auto_nature: Nature | null;
+    installment_number: number | null;
+    total_installments: number | null;
+    mark: Nature | null;
+  }[];
+
+  const byKey = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = byKey.get(r.key);
+    if (list) list.push(r);
+    else byKey.set(r.key, [r]);
+  }
+
+  const items: NatureEntry[] = [];
+  for (const [key, txs] of byKey) {
+    if (!txs.some((t) => t.kind === "expense")) continue;
+    const last = txs[0]!;
+    const months = new Map<string, number>();
+    for (const t of txs) {
+      const m = t.local_date.slice(0, 7);
+      months.set(m, (months.get(m) ?? 0) + (t.kind === "expense" ? t.amount_cents_abs : -t.amount_cents_abs));
+    }
+    const autoNature: Nature = txs.some((t) => t.auto_nature === "fixed") ? "fixed" : "variable";
+    items.push({
+      recurrenceKey: key,
+      description: last.description ?? "",
+      category: last.category,
+      nature: last.mark ?? autoNature,
+      natureSource: last.mark ? "manual" : autoNature === "fixed" ? "detected" : "default",
+      autoNature,
+      installment:
+        last.installment_number !== null && last.total_installments !== null && last.total_installments > 1
+          ? { number: last.installment_number, total: last.total_installments }
+          : null,
+      lastDate: last.local_date,
+      typicalCents: Math.round(median([...months.values()])),
+      months: [...months].map(([month, amountCents]) => ({ month, amountCents })).reverse(),
+      txCount: txs.length,
+    });
+  }
+  return { items };
 }
 
 // Grava (ou apaga, com null) a marcação da chave; não precisa recalcular nada, a view junta na leitura.

@@ -8,7 +8,9 @@ import type {
   CategorySource,
   ConnectionsResponse,
   Nature,
+  NatureEntry,
   NatureRequest,
+  NaturesResponse,
   OverrideRequest,
   RuleCreateRequest,
   RulePreviewRequest,
@@ -158,6 +160,39 @@ function allRows(excludeRuleId?: number): TransactionRow[] {
   return Array.from({ length: 12 }, (_, i) => rowsFor(addMonths("2026-10", -i), excludeRuleId)).flat();
 }
 
+// Um item por descrição (no app real, por chave de recorrência), mesmas regras do contrato.
+function naturesResponse(): NaturesResponse {
+  const byKey = new Map<string, TransactionRow[]>();
+  const rows = allRows()
+    .filter((r) => !r.ignored && (r.kind === "expense" || r.kind === "refund"))
+    .sort((a, b) => b.localDate.localeCompare(a.localDate));
+  for (const r of rows) byKey.set(r.description, [...(byKey.get(r.description) ?? []), r]);
+  const items: NatureEntry[] = [];
+  for (const [key, txs] of byKey) {
+    if (!txs.some((t) => t.kind === "expense")) continue;
+    const last = txs[0]!;
+    const months = new Map<string, number>();
+    for (const t of txs) months.set(t.localDate.slice(0, 7), (months.get(t.localDate.slice(0, 7)) ?? 0) - t.amountCents);
+    const values = [...months.values()].sort((a, b) => a - b);
+    const autoNature: Nature = txs.some((t) => t.autoNature === "fixed") ? "fixed" : "variable";
+    const mark = natureMarks.get(key);
+    items.push({
+      recurrenceKey: key,
+      description: key,
+      category: last.category,
+      nature: mark ?? autoNature,
+      natureSource: mark ? "manual" : autoNature === "fixed" ? "detected" : "default",
+      autoNature,
+      installment: last.installment,
+      lastDate: last.localDate,
+      typicalCents: values[values.length >> 1]!,
+      months: [...months].map(([month, amountCents]) => ({ month, amountCents })).reverse(),
+      txCount: txs.length,
+    });
+  }
+  return { items };
+}
+
 function rulesResponse(): { rules: CategoryRule[] } {
   const counts = new Map<number, number>();
   for (const r of allRows()) if (r.ruleId !== null && r.categorySource === "rule") counts.set(r.ruleId, (counts.get(r.ruleId) ?? 0) + 1);
@@ -297,6 +332,16 @@ export function mockApi(): Plugin {
           if ("ignored" in body) cur.ignored = body.ignored;
           overrides.set(fp, cur);
           return send(200, { fingerprint: fp, category: cur.category ?? null, ignored: cur.ignored ?? false, note: null });
+        }
+        if (url.pathname === "/api/natures" && req.method === "GET") return send(200, naturesResponse());
+        if (url.pathname.startsWith("/api/natures/by-key/") && req.method === "PATCH") {
+          const key = decodeURIComponent(url.pathname.slice("/api/natures/by-key/".length));
+          const matches = allRows().filter((r) => r.description === key && (r.kind === "expense" || r.kind === "refund"));
+          if (matches.length === 0) return send(404, { error: "estabelecimento não encontrado" });
+          const { nature } = (await readBody()) as NatureRequest;
+          if (nature === null) natureMarks.delete(key);
+          else natureMarks.set(key, nature);
+          return send(200, { recurrenceKey: key, nature, matchCount: matches.length });
         }
         if (url.pathname.startsWith("/api/natures/") && req.method === "PATCH") {
           const fp = decodeURIComponent(url.pathname.slice("/api/natures/".length));

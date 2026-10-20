@@ -11,7 +11,9 @@ import type {
   CategoriesResponse,
   ConnectionsResponse,
   CategoryRule,
+  NatureEntry,
   NatureResponse,
+  NaturesResponse,
   OverrideResponse,
   RulePreviewResponse,
   RulesResponse,
@@ -591,6 +593,80 @@ describe("natureza (fixo/variável)", () => {
     for (const b of [{ nature: "fixo" }, { nature: 1 }, {}, { nature: "fixed", foo: 1 }]) {
       assert.equal((await setNature("fp-b", b)).status, 400, JSON.stringify(b));
     }
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM nature_marks").get(), { n: 0 });
+  });
+
+  test("GET /api/natures: um item por estabelecimento com gasto, sem ignoradas", async () => {
+    applyNature(db);
+    const { items } = await json<NaturesResponse>("/api/natures");
+    const byKey = new Map(items.map((i) => [i.recurrenceKey, i]));
+    assert.equal(byKey.has("SINTETICAFPH"), false); // ignorada
+    assert.equal(byKey.has("SINTETICAFPC"), false); // só estorno
+    assert.equal(byKey.has("SINTETICAFPE"), false); // card_payment
+    assert.deepEqual(byKey.get("SINTETICAFPA"), {
+      recurrenceKey: "SINTETICAFPA",
+      description: "Sintética fp-a",
+      category: "Compras", // traduzida
+      nature: "fixed",
+      natureSource: "detected",
+      autoNature: "fixed",
+      installment: { number: 2, total: 5 },
+      lastDate: "2026-09-10",
+      typicalCents: 30_000,
+      months: [{ month: "2026-09", amountCents: 30_000 }],
+      txCount: 1,
+    } satisfies NatureEntry);
+    assert.deepEqual([byKey.get("SINTETICAFPI")?.nature, byKey.get("SINTETICAFPI")?.natureSource], ["variable", "default"]); // PENDING entra
+    assert.deepEqual(items.map((i) => i.lastDate), [...items.map((i) => i.lastDate)].sort().reverse());
+  });
+
+  test("GET /api/natures: valor típico é a mediana dos meses, estorno abate", async () => {
+    const insert = db.prepare(`
+      INSERT INTO transactions (account_id, fingerprint, date, local_date, description, amount_cents_raw, direction,
+        amount_cents_abs, status, kind, synced_at)
+      VALUES (2, ?, ?, ?, 'Sintética recorrente', ?, ?, ?, 'POSTED', ?, ?)`);
+    const rows: [string, string, number, "OUT" | "IN", string][] = [
+      ["fp-r1", "2026-06-05", 3_000, "OUT", "expense"],
+      ["fp-r2", "2026-07-05", 3_000, "OUT", "expense"],
+      ["fp-r3", "2026-08-05", 9_000, "OUT", "expense"],
+      ["fp-r4", "2026-08-06", 6_000, "IN", "refund"],
+      ["fp-r5", "2026-09-05", 3_200, "OUT", "expense"],
+    ];
+    for (const [fp, day, abs, dir, kind] of rows) {
+      insert.run(fp, `${day}T15:00:00.000Z`, day, dir === "OUT" ? -abs : abs, dir, abs, kind, NOW.toISOString());
+    }
+    applyNature(db);
+    const entry = (await json<NaturesResponse>("/api/natures")).items.find((i) => i.recurrenceKey === "SINTETICARECORRENTE");
+    assert.deepEqual(entry?.months, [
+      { month: "2026-06", amountCents: 3_000 },
+      { month: "2026-07", amountCents: 3_000 },
+      { month: "2026-08", amountCents: 3_000 },
+      { month: "2026-09", amountCents: 3_200 },
+    ]);
+    assert.equal(entry?.typicalCents, 3_000);
+    assert.equal(entry?.txCount, 5);
+    db.prepare("DELETE FROM transactions WHERE fingerprint LIKE 'fp-r_'").run();
+    applyNature(db);
+  });
+
+  test("PATCH /api/natures/by-key marca o estabelecimento direto", async () => {
+    const setKey = (key: string, body: unknown) =>
+      req(`/api/natures/by-key/${key}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const entry = async (key: string) =>
+      (await json<NaturesResponse>("/api/natures")).items.find((i) => i.recurrenceKey === key);
+
+    const r = await setKey("SINTETICAFPB", { nature: "fixed" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { recurrenceKey: "SINTETICAFPB", nature: "fixed", matchCount: 1 } satisfies NatureResponse);
+    const e = await entry("SINTETICAFPB");
+    assert.deepEqual([e?.nature, e?.natureSource, e?.autoNature], ["fixed", "manual", "variable"]);
+
+    await setKey("SINTETICAFPB", { nature: null });
+    assert.equal((await entry("SINTETICAFPB"))?.natureSource, "default");
+
+    assert.equal((await setKey("NAOEXISTE", { nature: "fixed" })).status, 404);
+    assert.equal((await setKey("SINTETICAFPE", { nature: "fixed" })).status, 404); // card_payment
+    assert.equal((await setKey("SINTETICAFPB", { nature: "fixo" })).status, 400);
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM nature_marks").get(), { n: 0 });
   });
 });

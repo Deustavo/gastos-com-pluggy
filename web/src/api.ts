@@ -6,6 +6,7 @@ import type {
   ConnectionsResponse,
   NatureRequest,
   NatureResponse,
+  NaturesResponse,
   OverrideRequest,
   CategoryRule,
   OverrideResponse,
@@ -89,6 +90,9 @@ export const api = {
     request<OverrideResponse>("PATCH", `/api/overrides/${encodeURIComponent(fingerprint)}`, body),
   nature: (fingerprint: string, body: NatureRequest) =>
     request<NatureResponse>("PATCH", `/api/natures/${encodeURIComponent(fingerprint)}`, body),
+  natures: () => request<NaturesResponse>("GET", "/api/natures"),
+  natureByKey: (key: string, body: NatureRequest) =>
+    request<NatureResponse>("PATCH", `/api/natures/by-key/${encodeURIComponent(key)}`, body),
   sync: () => request<SyncResponse>("POST", "/api/sync"),
   rules: () => request<RulesResponse>("GET", "/api/rules"),
   createRule: (body: RuleCreateRequest) => request<CategoryRule>("POST", "/api/rules", body),

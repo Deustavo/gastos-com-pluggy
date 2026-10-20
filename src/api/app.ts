@@ -22,8 +22,10 @@ import {
   insertRule,
   listCategories,
   listConnections,
+  listNatures,
   listRules,
   listTransactions,
+  natureKeyExists,
   natureTarget,
   previewRule,
   reorderRules,
@@ -127,6 +129,16 @@ function mergeRule<T extends RuleDraft>(db: Db, current: T, req: Record<string, 
   return next;
 }
 
+async function parseNatureRequest(c: Context): Promise<Nature | null> {
+  const req = await readJson(c);
+  rejectExtra(req, ["nature"]);
+  const nature = req.nature;
+  if (nature !== null && !NATURES.includes(nature as Nature)) {
+    throw new BadRequest(`nature deve ser um de: ${NATURES.join(", ")}, ou null`);
+  }
+  return nature as Nature | null;
+}
+
 // Aplica o PATCH sobre o override atual; campos ausentes ficam como estão.
 function mergeOverride(db: Db, current: OverrideResponse, req: Record<string, unknown>): OverrideResponse {
   rejectExtra(req, ["category", "ignored", "note"]);
@@ -215,17 +227,21 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
     return c.json(next);
   });
 
+  app.get("/api/natures", (c) => c.json(listNatures(db)));
+
+  app.patch("/api/natures/by-key/:key", async (c) => {
+    const key = c.req.param("key");
+    if (!natureKeyExists(db, key)) return fail(c, 404, "estabelecimento não encontrado");
+    const nature = await parseNatureRequest(c);
+    return c.json(saveNatureMark(db, key, nature, now()));
+  });
+
   app.patch("/api/natures/:fingerprint", async (c) => {
     const target = natureTarget(db, c.req.param("fingerprint"));
     if (!target) return fail(c, 404, "transação não encontrada");
-    const req = await readJson(c);
-    rejectExtra(req, ["nature"]);
-    const nature = req.nature;
-    if (nature !== null && !NATURES.includes(nature as Nature)) {
-      throw new BadRequest(`nature deve ser um de: ${NATURES.join(", ")}, ou null`);
-    }
+    const nature = await parseNatureRequest(c);
     if (target.key === null) throw new BadRequest("só gastos e estornos com descrição podem ser marcados como fixo ou variável");
-    return c.json(saveNatureMark(db, target.key, nature as Nature | null, now()));
+    return c.json(saveNatureMark(db, target.key, nature, now()));
   });
 
   // Regras: toda mudança recalcula rule_id/rule_category de todas as transações

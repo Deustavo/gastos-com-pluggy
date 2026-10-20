@@ -115,6 +115,28 @@ export interface NatureResponse {
   matchCount: number; // transações com a mesma chave
 }
 
+// PATCH /api/natures/by-key/:recurrenceKey → NatureResponse. Mesmo efeito do PATCH por fingerprint,
+// para marcar um estabelecimento sem passar por uma transação. 404 se nenhum gasto/estorno tiver a chave.
+
+// GET /api/natures → um item por estabelecimento (chave de recorrência) com pelo menos um gasto,
+// para gerenciar os gastos fixos. Desconsidera transações ignoradas; PENDING entra (mostra que já veio no mês).
+export interface NatureEntry {
+  recurrenceKey: string;
+  description: string; // da transação mais recente
+  category: string; // efetiva, da transação mais recente
+  nature: Nature; // marcação manual > detecção > variável
+  natureSource: NatureSource;
+  autoNature: Nature; // o que valeria sem a marcação manual
+  installment: { number: number; total: number } | null; // da transação mais recente, se for parcela
+  lastDate: string;
+  typicalCents: number; // mediana dos totais mensais (gasto − estorno)
+  months: { month: string; amountCents: number }[]; // meses em que apareceu, asc
+  txCount: number;
+}
+export interface NaturesResponse {
+  items: NatureEntry[]; // lastDate desc
+}
+
 // POST /api/sync → roda o mesmo SyncService do `npm run sync`.
 // 409 se já houver um sync em andamento.
 export type SyncResponse = SyncReport;

@@ -3,6 +3,7 @@ import type { Nature, NatureRequest, OverrideRequest, TransactionRow } from "../
 import { api } from "./api.ts";
 import { CategoryChart } from "./components/CategoryChart.tsx";
 import { ConnectionsPanel } from "./components/ConnectionsPanel.tsx";
+import { FixedExpensesPanel } from "./components/FixedExpensesPanel.tsx";
 import { Header } from "./components/Header.tsx";
 import { MonthlyChart } from "./components/MonthlyChart.tsx";
 import { NaturePieChart } from "./components/NaturePieChart.tsx";
@@ -20,7 +21,7 @@ export function App() {
     const now = currentMonth();
     setMonthRaw(m > now ? now : m);
   }, []);
-  // dataVersion: recarrega resumo, lista, categorias e regras (após editar); syncVersion: tudo, inclusive conexões
+  // dataVersion: recarrega resumo, lista, categorias, regras e gastos fixos (após editar); syncVersion: tudo, inclusive conexões
   const [dataVersion, setDataVersion] = useState(0);
   const [syncVersion, setSyncVersion] = useState(0);
   const [filters, setFilters] = useState<TxFilters>({
@@ -37,6 +38,7 @@ export function App() {
   const cats = useAsync(() => api.categories(), [dataVersion, syncVersion]);
   const conns = useAsync(() => api.connections(), [syncVersion]);
   const rules = useAsync(() => api.rules(), [dataVersion, syncVersion]);
+  const natures = useAsync(() => api.natures(), [dataVersion, syncVersion]);
   const [ruleDraft, setRuleDraft] = useState<RuleDraft | undefined>();
 
   const onOverride = useCallback(async (fingerprint: string, body: OverrideRequest) => {
@@ -116,6 +118,15 @@ export function App() {
             onNature={onNature}
             rules={rules.data?.rules}
             onCreateRule={onCreateRule}
+          />
+        </div>
+        <div id="fixos">
+          <FixedExpensesPanel
+            entries={natures.data?.items}
+            loading={natures.loading}
+            error={natures.error}
+            month={month}
+            onChanged={onDataChanged}
           />
         </div>
         <div id="regras">
