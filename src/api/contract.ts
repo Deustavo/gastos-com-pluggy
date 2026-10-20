@@ -34,8 +34,10 @@ export interface TransactionRow {
   amountCents: number; // assinado do ponto de vista do dono: OUT negativo, IN positivo
   kind: Kind;
   status: "POSTED" | "PENDING";
-  category: string; // efetiva (override > fornecedor); "Sem categoria" se vazia
-  providerCategory: string | null;
+  category: string; // efetiva (override > regra > fornecedor em pt-BR); "Sem categoria" se vazia
+  categorySource: CategorySource;
+  ruleId: number | null; // regra que casou (mesmo quando um override a sobrepõe)
+  providerCategory: string | null; // categoria do fornecedor já traduzida para pt-BR
   overridden: boolean; // tem categoria própria
   ignored: boolean;
   note: string | null;
@@ -74,7 +76,7 @@ export interface ConnectionsResponse {
 }
 
 // PATCH /api/overrides/:fingerprint — campos ausentes ficam como estão;
-// category null volta à categoria do fornecedor. 404 se o fingerprint não existir em transactions.
+// category null volta à categoria automática (regra ou fornecedor). 404 se o fingerprint não existir em transactions.
 export interface OverrideRequest {
   category?: string | null;
   ignored?: boolean;
@@ -90,6 +92,56 @@ export interface OverrideResponse {
 // POST /api/sync → roda o mesmo SyncService do `npm run sync`.
 // 409 se já houver um sync em andamento.
 export type SyncResponse = SyncReport;
+
+// De onde veio a categoria efetiva. "none" = sem categoria.
+export type CategorySource = "override" | "rule" | "provider" | "none";
+
+// Regras locais de categorização (fase 3). A primeira regra habilitada que casar,
+// em ordem de `priority` asc (empate: id asc), define a categoria. O padrão é uma
+// regex JS testada com flag "i" contra a descrição; acentos são ignorados dos dois lados.
+// A regra só muda a categoria exibida; o `kind` continua vindo da categoria do fornecedor.
+export interface CategoryRule {
+  id: number;
+  pattern: string;
+  category: string;
+  priority: number;
+  enabled: boolean;
+  matchCount: number; // transações que esta regra categoriza hoje (já descontando regras anteriores)
+  createdAt: string;
+}
+
+// GET /api/rules
+export interface RulesResponse {
+  rules: CategoryRule[]; // ordem de aplicação
+}
+
+// POST /api/rules → 201 CategoryRule. priority ausente = vai para o fim.
+// 400 se a regex for inválida, pattern vazio/> 200 caracteres ou category vazia/> 60.
+export interface RuleCreateRequest {
+  pattern: string;
+  category: string;
+  priority?: number;
+  enabled?: boolean;
+}
+
+// PATCH /api/rules/:id → CategoryRule (campos ausentes ficam como estão). DELETE /api/rules/:id → 204.
+export type RuleUpdateRequest = Partial<RuleCreateRequest>;
+
+// POST /api/rules/reorder → RulesResponse. `ids` deve conter todas as regras, na nova ordem.
+export interface RuleReorderRequest {
+  ids: number[];
+}
+
+// POST /api/rules/preview: testa um padrão sem salvar. `excludeRuleId` ignora a própria
+// regra ao editar. Conta todas as transações do banco (não só um mês).
+export interface RulePreviewRequest {
+  pattern: string;
+  excludeRuleId?: number;
+}
+export interface RulePreviewResponse {
+  matchCount: number;
+  sample: { localDate: string; description: string; amountCents: number; currentCategory: string }[]; // até 20, mais recentes
+}
 
 export interface ApiError {
   error: string;

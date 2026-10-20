@@ -1,6 +1,7 @@
 // Orquestra o sync: provider → SQLite, reclassificação global e integridade.
 // Sem saída de terminal: devolve um SyncReport (o CLI e a Fase 2 decidem como mostrar).
 
+import { applyRules } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Account, AccountType, Bill, DataProvider, Direction, Transaction } from "../providers/types.ts";
 import { classify, type BillRef, type Kind } from "./classify.ts";
@@ -93,7 +94,11 @@ export class SyncService {
     const connections: ConnectionReport[] = [];
     for (const conn of conns) connections.push(await this.#syncConnection(conn, now, from, alerts));
 
+    // Tradução das categorias: uma vez por provider em uso; falha vira alerta
+    for (const name of new Set(conns.map((c) => c.provider))) await this.#syncCategories(name, alerts);
+
     this.#reclassifyAll();
+    applyRules(this.#db);
 
     for (const c of connections) for (const a of c.accounts) Object.assign(a, this.#accountStats(a.accountId));
 
@@ -200,6 +205,25 @@ export class SyncService {
       return report;
     } catch (e) {
       return fail(errMsg(e));
+    }
+  }
+
+  async #syncCategories(name: string, alerts: string[]): Promise<void> {
+    const provider = this.#providers[name];
+    if (!provider?.listCategories) return;
+    try {
+      const cats = await provider.listCategories();
+      const upsert = this.#db.prepare(`
+        INSERT INTO provider_categories (provider, name, name_pt) VALUES (?, ?, ?)
+        ON CONFLICT (provider, name) DO UPDATE SET name_pt = excluded.name_pt`);
+      this.#db.transaction(() => {
+        for (const c of cats) {
+          if (!c.name.trim()) continue;
+          upsert.run(name, c.name, c.namePt.trim() || c.name);
+        }
+      })();
+    } catch (e) {
+      alerts.push(`categorias de ${name}: ${errMsg(e)}`);
     }
   }
 

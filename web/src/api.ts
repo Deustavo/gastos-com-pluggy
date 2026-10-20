@@ -5,7 +5,13 @@ import type {
   CategoriesResponse,
   ConnectionsResponse,
   OverrideRequest,
+  CategoryRule,
   OverrideResponse,
+  RuleCreateRequest,
+  RulePreviewRequest,
+  RulePreviewResponse,
+  RulesResponse,
+  RuleUpdateRequest,
   SummaryResponse,
   SyncResponse,
   TransactionsResponse,
@@ -21,9 +27,9 @@ export class HttpError extends Error {
   }
 }
 
-async function request<T>(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<T> {
+async function request<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, headers: { Accept: "application/json" } };
-  if (method !== "GET") {
+  if (method === "POST" || method === "PATCH") {
     init.headers = { Accept: "application/json", "Content-Type": "application/json" };
     init.body = JSON.stringify(body ?? {});
   }
@@ -49,6 +55,7 @@ async function request<T>(method: "GET" | "POST" | "PATCH", path: string, body?:
         : `HTTP ${res.status}`;
     throw new HttpError(res.status, msg);
   }
+  if (res.status === 204) return undefined as T;
   if (data === undefined) throw new HttpError(res.status, "Resposta inválida da API");
   return data as T;
 }
@@ -76,4 +83,10 @@ export const api = {
   override: (fingerprint: string, body: OverrideRequest) =>
     request<OverrideResponse>("PATCH", `/api/overrides/${encodeURIComponent(fingerprint)}`, body),
   sync: () => request<SyncResponse>("POST", "/api/sync"),
+  rules: () => request<RulesResponse>("GET", "/api/rules"),
+  createRule: (body: RuleCreateRequest) => request<CategoryRule>("POST", "/api/rules", body),
+  updateRule: (id: number, body: RuleUpdateRequest) => request<CategoryRule>("PATCH", `/api/rules/${id}`, body),
+  deleteRule: (id: number) => request<void>("DELETE", `/api/rules/${id}`),
+  reorderRules: (ids: number[]) => request<RulesResponse>("POST", "/api/rules/reorder", { ids }),
+  previewRule: (body: RulePreviewRequest) => request<RulePreviewResponse>("POST", "/api/rules/preview", body),
 };

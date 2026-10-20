@@ -13,6 +13,7 @@ const ALLOWED_READ_PATHS = [
   /^\/accounts$/,
   /^\/v2\/transactions$/,
   /^\/bills$/,
+  /^\/categories$/, // só a lista (tradução); /categories/rules NUNCA: as regras são locais
 ];
 
 export interface PluggyItem {
@@ -67,6 +68,14 @@ export interface PluggyTransaction {
     billForecastDate?: string;
     paymentType?: "SINGLE" | "INSTALLMENT";
   };
+}
+
+export interface PluggyCategory {
+  id: string;
+  description: string;
+  descriptionTranslated?: string | null;
+  parentId?: string | null;
+  parentDescription?: string | null;
 }
 
 export interface PluggyBill {
@@ -134,6 +143,15 @@ export class PluggyClient {
       const res = await this.#get<PageResponse<PluggyBill>>(`/bills?${params}`);
       bills.push(...res.results);
       if (page >= res.totalPages) return bills;
+    }
+  }
+
+  async listCategories(): Promise<PluggyCategory[]> {
+    const categories: PluggyCategory[] = [];
+    for (let page = 1; ; page++) {
+      const res = await this.#get<PageResponse<PluggyCategory>>(page === 1 ? "/categories" : `/categories?page=${page}`);
+      categories.push(...res.results);
+      if (page >= (res.totalPages ?? 1)) return categories;
     }
   }
 

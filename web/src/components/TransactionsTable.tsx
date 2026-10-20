@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
+import type { CategoryRule, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
 import { formatCents, formatDay, KIND_LABEL } from "../format.ts";
 import { Panel } from "./Panel.tsx";
 
@@ -20,13 +20,27 @@ interface Props {
   filters: TxFilters;
   onFiltersChange: (f: TxFilters) => void;
   onOverride: (fingerprint: string, body: OverrideRequest) => Promise<void>;
+  rules: CategoryRule[] | undefined; // para o tooltip da origem da categoria
+  onCreateRule: (row: TransactionRow) => void;
 }
 
 // Kinds que não são gasto (ficam ocultos por padrão). refund fica visível: abate o gasto.
 const NON_EXPENSE = new Set(["transfer", "card_payment", "income"]);
 
-export function TransactionsTable({ rows, loading, error, categories, filters, onFiltersChange, onOverride }: Props) {
+export function TransactionsTable({
+  rows,
+  loading,
+  error,
+  categories,
+  filters,
+  onFiltersChange,
+  onOverride,
+  rules,
+  onCreateRule,
+}: Props) {
   const all = useMemo(() => rows ?? [], [rows]);
+
+  const rulesById = useMemo(() => new Map((rules ?? []).map((r) => [r.id, r])), [rules]);
 
   const accounts = useMemo(() => {
     const m = new Map<number, string>();
@@ -146,7 +160,14 @@ export function TransactionsTable({ rows, loading, error, categories, filters, o
             </thead>
             <tbody>
               {visible.map((r) => (
-                <TxRow key={r.id} row={r} categories={categories} onOverride={onOverride} />
+                <TxRow
+                  key={r.id}
+                  row={r}
+                  categories={categories}
+                  rule={r.ruleId === null ? undefined : rulesById.get(r.ruleId)}
+                  onOverride={onOverride}
+                  onCreateRule={onCreateRule}
+                />
               ))}
             </tbody>
           </table>
@@ -158,15 +179,20 @@ export function TransactionsTable({ rows, loading, error, categories, filters, o
 
 const NEW = "__new__";
 const RESET = "__reset__";
+const RULE = "__rule__";
 
 function TxRow({
   row,
   categories,
+  rule,
   onOverride,
+  onCreateRule,
 }: {
   row: TransactionRow;
   categories: string[];
+  rule: CategoryRule | undefined; // regra que casou (se a lista de regras estiver carregada)
   onOverride: (fingerprint: string, body: OverrideRequest) => Promise<void>;
+  onCreateRule: (row: TransactionRow) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | undefined>();
@@ -195,6 +221,7 @@ function TxRow({
       return;
     }
     if (value === RESET) return void save({ category: null });
+    if (value === RULE) return onCreateRule(row);
     if (value !== row.category) void save({ category: value });
   }
 
@@ -203,6 +230,20 @@ function TxRow({
     if (!name) return;
     void save({ category: name });
   }
+
+  // Categoria automática (sem o override): a da regra que casou, senão a do fornecedor.
+  // Se a regra casou mas a lista de regras não carregou, não dá para saber o nome.
+  const autoCategory = row.ruleId !== null ? rule?.category : (row.providerCategory ?? "sem categoria");
+  const source =
+    row.categorySource === "override"
+      ? {
+          label: "manual",
+          cls: "src-manual",
+          title: `Categoria escolhida à mão${autoCategory ? ` (automática: ${autoCategory})` : ""}`,
+        }
+      : row.categorySource === "rule"
+        ? { label: "regra", cls: "src-rule", title: rule ? `Regra: ${rule.pattern}` : "Categoria definida por uma regra" }
+        : undefined;
 
   const amountClass = row.amountCents < 0 ? "neg" : row.amountCents > 0 ? "pos" : "";
 
@@ -254,22 +295,34 @@ function TxRow({
             </button>
           </form>
         ) : (
-          <select
-            className={`cat-select ${row.overridden ? "overridden" : ""}`}
-            value={row.category}
-            onChange={(e) => onSelect(e.target.value)}
-            disabled={saving}
-            title={row.overridden ? `Categoria própria (original: ${row.providerCategory ?? "sem categoria"})` : undefined}
-            aria-label="Categoria"
-          >
-            {options.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            <option value={NEW}>Nova categoria…</option>
-            {row.overridden && <option value={RESET}>Voltar à original ({row.providerCategory ?? "sem categoria"})</option>}
-          </select>
+          <div className="cat-cell">
+            <select
+              className={`cat-select ${row.overridden ? "overridden" : ""}`}
+              value={row.category}
+              onChange={(e) => onSelect(e.target.value)}
+              disabled={saving}
+              title={source?.title}
+              aria-label="Categoria"
+            >
+              {options.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              <option value={NEW}>Nova categoria…</option>
+              <option value={RULE}>Criar regra…</option>
+              {row.overridden && (
+                <option value={RESET}>Voltar à automática{autoCategory ? ` (${autoCategory})` : ""}</option>
+              )}
+            </select>
+            <span className="src-slot">
+              {source && (
+                <span className={`src-badge ${source.cls}`} title={source.title}>
+                  {source.label}
+                </span>
+              )}
+            </span>
+          </div>
         )}
         {err && <div className="row-error">{err}</div>}
       </td>

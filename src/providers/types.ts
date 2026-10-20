@@ -64,4 +64,11 @@ export interface DataProvider {
   listAccounts(externalId: string): Promise<Account[]>;
   listTransactions(account: Account, range: DateRange): AsyncIterable<Transaction>;
   listBills(account: Account): Promise<Bill[]>; // [] para contas que não são cartão
+  // Tradução das categorias: name = texto que vem em Transaction.category, namePt = pt-BR
+  listCategories?(): Promise<ProviderCategory[]>;
+}
+
+export interface ProviderCategory {
+  name: string;
+  namePt: string;
 }

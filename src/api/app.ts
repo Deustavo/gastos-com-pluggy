@@ -9,15 +9,24 @@ import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
 import { toLocalDate } from "../sync/dates.ts";
 import type { SyncReport } from "../sync/sync.ts";
-import type { ApiError, OverrideRequest, OverrideResponse } from "./contract.ts";
+import { applyRules, compileRule } from "../categorize/rules.ts";
+import type { ApiError, OverrideRequest, OverrideResponse, RuleCreateRequest } from "./contract.ts";
 import {
+  deleteRule,
   fingerprintExists,
   getOverride,
+  getRule,
   getSummary,
+  insertRule,
   listCategories,
   listConnections,
+  listRules,
   listTransactions,
+  previewRule,
+  reorderRules,
+  ruleIds,
   saveOverride,
+  updateRule,
 } from "./queries.ts";
 
 export interface AppDeps {
@@ -52,12 +61,66 @@ function parseEnum<T extends string>(name: string, value: string | undefined, al
   return value as T;
 }
 
-// Aplica o PATCH sobre o override atual; campos ausentes ficam como estão.
-function mergeOverride(current: OverrideResponse, body: unknown): OverrideResponse {
+async function readJson(c: Context): Promise<Record<string, unknown>> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new BadRequest("JSON inválido");
+  }
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequest("corpo deve ser um objeto JSON");
-  const req = body as Record<string, unknown>;
-  const extra = Object.keys(req).filter((k) => !["category", "ignored", "note"].includes(k));
+  return body as Record<string, unknown>;
+}
+
+function rejectExtra(req: Record<string, unknown>, allowed: string[]): void {
+  const extra = Object.keys(req).filter((k) => !allowed.includes(k));
   if (extra.length) throw new BadRequest(`campos desconhecidos: ${extra.join(", ")}`);
+}
+
+function parseId(value: string): number {
+  if (!/^\d{1,9}$/.test(value)) throw new BadRequest("id deve ser numérico");
+  return Number(value);
+}
+
+function parsePattern(v: unknown): string {
+  if (typeof v !== "string") throw new BadRequest("pattern deve ser texto");
+  const pattern = v.trim();
+  try {
+    compileRule(pattern);
+  } catch (e) {
+    throw new BadRequest((e as Error).message);
+  }
+  return pattern;
+}
+
+// Aplica POST/PATCH de regra sobre o estado atual (no POST, `current` tem só os padrões).
+type RuleDraft = Omit<RuleCreateRequest, "pattern" | "category"> & { pattern?: string; category?: string; enabled: boolean };
+function mergeRule<T extends RuleDraft>(current: T, req: Record<string, unknown>): T {
+  rejectExtra(req, ["pattern", "category", "priority", "enabled"]);
+  const next = { ...current };
+  if ("pattern" in req) next.pattern = parsePattern(req.pattern);
+  if ("category" in req) {
+    const v = req.category;
+    if (typeof v !== "string" || v.trim() === "" || v.trim().length > 60) {
+      throw new BadRequest("category deve ser texto não vazio de até 60 caracteres");
+    }
+    next.category = v.trim();
+  }
+  if ("priority" in req) {
+    const v = req.priority;
+    if (typeof v !== "number" || !Number.isSafeInteger(v)) throw new BadRequest("priority deve ser inteiro");
+    next.priority = v;
+  }
+  if ("enabled" in req) {
+    if (typeof req.enabled !== "boolean") throw new BadRequest("enabled deve ser boolean");
+    next.enabled = req.enabled;
+  }
+  return next;
+}
+
+// Aplica o PATCH sobre o override atual; campos ausentes ficam como estão.
+function mergeOverride(current: OverrideResponse, req: Record<string, unknown>): OverrideResponse {
+  rejectExtra(req, ["category", "ignored", "note"]);
   const next = { ...current };
 
   if ("category" in req) {
@@ -90,11 +153,13 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
     await next();
   });
 
-  // CSRF: métodos que alteram estado exigem JSON e, se houver Origin, que seja local
+  // CSRF: métodos que alteram estado exigem, se houver Origin, que seja local, e JSON
+  // (DELETE não tem corpo, então não exige Content-Type; de outro site já cai no preflight do CORS)
   app.use("*", async (c, next) => {
     if (SAFE_METHODS.has(c.req.method)) return next();
     const origin = c.req.header("origin");
     if (origin !== undefined && !LOCAL_ORIGIN_RE.test(origin)) return fail(c, 403, "origem não permitida");
+    if (c.req.method === "DELETE") return next();
     const type = c.req.header("content-type") ?? "";
     if (!/^application\/json\s*(;|$)/i.test(type)) return fail(c, 415, "Content-Type deve ser application/json");
     await next();
@@ -134,15 +199,64 @@ export function createApp({ db, runSync, now = () => new Date(), webDir = DEFAUL
   app.patch("/api/overrides/:fingerprint", async (c) => {
     const fp = c.req.param("fingerprint");
     if (!fingerprintExists(db, fp)) return fail(c, 404, "transação não encontrada");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw new BadRequest("JSON inválido");
-    }
-    const next = mergeOverride(getOverride(db, fp), body);
+    const next = mergeOverride(getOverride(db, fp), await readJson(c));
     saveOverride(db, next);
     return c.json(next);
+  });
+
+  // Regras: toda mudança recalcula rule_id/rule_category de todas as transações
+  app.get("/api/rules", (c) => c.json(listRules(db)));
+
+  app.post("/api/rules", async (c) => {
+    const draft = mergeRule<RuleDraft>({ enabled: true }, await readJson(c));
+    if (draft.pattern === undefined) throw new BadRequest("pattern é obrigatório");
+    if (draft.category === undefined) throw new BadRequest("category é obrigatório");
+    const id = insertRule(db, { ...draft, pattern: draft.pattern, category: draft.category }, now());
+    applyRules(db);
+    return c.json(getRule(db, id), 201);
+  });
+
+  app.post("/api/rules/reorder", async (c) => {
+    const req = await readJson(c);
+    rejectExtra(req, ["ids"]);
+    const ids = req.ids;
+    const existing = new Set(ruleIds(db));
+    if (
+      !Array.isArray(ids) ||
+      !ids.every((id) => Number.isSafeInteger(id) && existing.has(id as number)) ||
+      new Set(ids).size !== ids.length ||
+      ids.length !== existing.size
+    ) {
+      throw new BadRequest("ids deve conter cada regra existente exatamente uma vez");
+    }
+    reorderRules(db, ids as number[]);
+    applyRules(db);
+    return c.json(listRules(db));
+  });
+
+  app.post("/api/rules/preview", async (c) => {
+    const req = await readJson(c);
+    rejectExtra(req, ["pattern", "excludeRuleId"]);
+    const pattern = parsePattern(req.pattern);
+    const exclude = req.excludeRuleId;
+    if (exclude !== undefined && !(typeof exclude === "number" && Number.isSafeInteger(exclude))) {
+      throw new BadRequest("excludeRuleId deve ser inteiro");
+    }
+    return c.json(previewRule(db, pattern, exclude));
+  });
+
+  app.patch("/api/rules/:id", async (c) => {
+    const current = getRule(db, parseId(c.req.param("id")));
+    if (!current) return fail(c, 404, "regra não encontrada");
+    updateRule(db, mergeRule(current, await readJson(c)));
+    applyRules(db);
+    return c.json(getRule(db, current.id));
+  });
+
+  app.delete("/api/rules/:id", (c) => {
+    if (!deleteRule(db, parseId(c.req.param("id")))) return fail(c, 404, "regra não encontrada");
+    applyRules(db);
+    return c.body(null, 204);
   });
 
   // Mutex em memória: um sync por vez

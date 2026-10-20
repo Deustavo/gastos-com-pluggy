@@ -1,7 +1,7 @@
 # Próximos passos (handoff)
 
-> Para retomar numa sessão nova: *"Leia `docs/PROXIMOS_PASSOS.md` e `docs/PLANO.md` e comece a fase 3."*
-> Estado em **2026-10-20** (fases 1 e 2 concluídas).
+> Para retomar numa sessão nova: *"Leia `docs/PROXIMOS_PASSOS.md` e `docs/PLANO.md` e comece a fase 4."*
+> Estado em **2026-10-20** (fases 1, 2 e 3 concluídas).
 
 ## Contexto em 30 segundos
 
@@ -221,10 +221,22 @@ Pendências da fase 2:
   - painel de saúde das conexões (última atualização, expiração do consentimento).
 - Botão "sincronizar agora", que chama o mesmo `SyncService`.
 
-## Fases 3 e 4
+## Fase 3: categorização (concluída em 2026-10-20)
 
-- **3:** regras locais de categorização (regex sobre a descrição → categoria
-  própria, com prioridade sobre a categoria da Pluggy). Nomes das categorias em português.
+- **Tradução:** `GET /categories` da Pluggy (rota nova no client, só GET; `/categories/rules` da Pluggy é proibido) grava `provider_categories` a cada sync. As 40 categorias presentes nos dados estão traduzidas.
+- **Regras locais:** tabela `category_rules`, motor em `src/categorize/rules.ts` (regex com flag `i`, sem acentos dos dois lados, primeira regra habilitada por `priority`). `applyRules` grava `rule_id`/`rule_category` em todas as transações, no fim do sync e após qualquer mudança de regra.
+- **Precedência da categoria:** override manual > regra > fornecedor (pt-BR). O `kind` continua vindo da categoria **original** do fornecedor: regra não muda o que conta como gasto.
+- **Migrações:** `PRAGMA user_version` + lista `MIGRATIONS` em `src/db/index.ts`; `schema.sql` fica congelado na forma da fase 2; a view está em `src/db/views.sql` e é recriada a cada migração. Backup pré-migração em `data/app.db.bak-fase2` (pode apagar).
+- **API:** `GET/POST /api/rules`, `PATCH/DELETE /api/rules/:id`, `POST /api/rules/reorder`, `POST /api/rules/preview`. `TransactionRow` ganhou `categorySource` e `ruleId`.
+- **Front:** painel "Regras de categorização" com teste ao vivo, ação "Criar regra…" na lista (padrão sugerido a partir da descrição), badges "manual"/"regra".
+
+Observações:
+- O preview da API conta as transações que a regra **de fato** pegaria (respeitando regras anteriores); o mock do front conta casamento bruto. Linhas com override aparecem com "atual → nova" mesmo sem mudar (melhoria possível: `currentSource` na amostra).
+- Regex arbitrária roda no servidor, sem proteção contra ReDoS. Aceitável para uso local de um usuário só.
+- Ainda não há nenhuma regra cadastrada.
+
+## Fase 4
+
 - **4:** segundo banco (conectar no meu.pluggy.ai, depois **Conectar Conta →
   MeuPluggy** no Dashboard; cada banco gera um `itemId` novo) e `OfxProvider`
   como plano B.

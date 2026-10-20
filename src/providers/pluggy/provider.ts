@@ -7,9 +7,17 @@ import type {
   DataProvider,
   DateRange,
   Direction,
+  ProviderCategory,
   Transaction,
 } from "../types.ts";
-import type { PluggyAccount, PluggyBill, PluggyClient, PluggyItem, PluggyTransaction } from "./client.ts";
+import type {
+  PluggyAccount,
+  PluggyBill,
+  PluggyCategory,
+  PluggyClient,
+  PluggyItem,
+  PluggyTransaction,
+} from "./client.ts";
 
 const OK_EXECUTION_STATUSES = new Set(["SUCCESS", "PARTIAL_SUCCESS"]);
 // Exigem ação do usuário (reconectar, renovar consentimento etc.).
@@ -43,6 +51,15 @@ export class PluggyProvider implements DataProvider {
     if (account.type !== "CREDIT") return [];
     return (await this.#client.listBills(account.externalId)).map((b) => toBill(b, account));
   }
+
+  async listCategories(): Promise<ProviderCategory[]> {
+    return (await this.#client.listCategories()).map(toProviderCategory);
+  }
+}
+
+// Sem tradução, fica o texto original.
+export function toProviderCategory(c: PluggyCategory): ProviderCategory {
+  return { name: c.description, namePt: c.descriptionTranslated?.trim() || c.description };
 }
 
 export function toConnectionStatus(item: PluggyItem): ConnectionStatus {

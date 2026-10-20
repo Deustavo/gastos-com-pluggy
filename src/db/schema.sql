@@ -1,4 +1,6 @@
--- Schema idempotente: aplicado a cada abertura do banco.
+-- Schema base (fase 2), idempotente: aplicado a cada abertura do banco.
+-- Mudanças posteriores entram como migrações em index.ts (PRAGMA user_version);
+-- a view v_transactions fica em views.sql e é recriada depois delas.
 -- Valores em centavos (INTEGER). Datas em ISO UTC (TEXT);
 -- local_date é YYYY-MM-DD em America/Sao_Paulo.
 
@@ -88,16 +90,3 @@ CREATE TABLE IF NOT EXISTS connection_status (
   consent_expires_at TEXT,
   checked_at TEXT NOT NULL
 );
-
--- Leitura da Fase 2: transações com os overrides aplicados.
--- Recriada a cada abertura para acompanhar mudanças de colunas (t.* é fixado na criação).
-DROP VIEW IF EXISTS v_transactions;
-CREATE VIEW v_transactions AS
-SELECT
-  t.*,
-  COALESCE(o.category, t.category) AS effective_category,
-  COALESCE(o.ignored, 0) AS ignored,
-  o.category AS override_category,
-  o.note AS override_note
-FROM transactions t
-LEFT JOIN overrides o ON o.fingerprint = t.fingerprint;

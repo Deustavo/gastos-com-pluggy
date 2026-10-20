@@ -8,8 +8,12 @@ import { createApp } from "../src/api/app.ts";
 import type {
   CategoriesResponse,
   ConnectionsResponse,
+  CategoryRule,
   OverrideResponse,
+  RulePreviewResponse,
+  RulesResponse,
   SummaryResponse,
+  TransactionRow,
   TransactionsResponse,
 } from "../src/api/contract.ts";
 import { openDb, type Db } from "../src/db/index.ts";
@@ -351,4 +355,168 @@ test("serve web/dist com fallback para index.html", async () => {
   assert.equal((await get("/api/nada")).status, 404);
   assert.equal((await get("/")).status, 200);
   assert.equal((await spa.request(`${BASE}/`, { headers: { Host: "evil.com" } })).status, 403);
+});
+
+describe("regras de categorização (fase 3)", () => {
+  const send = (method: string, p: string, body?: unknown, headers: Record<string, string> = {}) =>
+    req(p, {
+      method,
+      headers: body === undefined ? headers : { "Content-Type": "application/json", ...headers },
+      body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
+    });
+  const txs = async (): Promise<Map<string, TransactionRow>> =>
+    new Map((await json<TransactionsResponse>("/api/transactions?month=2026-09")).items.map((i) => [i.fingerprint, i]));
+  const rules = async () => (await json<RulesResponse>("/api/rules")).rules;
+  const view = (t?: TransactionRow) => [t?.category, t?.categorySource, t?.ruleId, t?.providerCategory];
+  let r1: CategoryRule;
+  let r2: CategoryRule;
+
+  before(() => {
+    // tradução sintética do fornecedor das contas de teste
+    db.exec("INSERT INTO provider_categories VALUES ('fake', 'Groceries', 'Supermercado'), ('fake', 'Shopping', 'Compras'), ('outro', 'Salary', 'Não é deste')");
+  });
+
+  test("sem regras: categoria do fornecedor em pt-BR; sem tradução fica o original", async () => {
+    assert.deepEqual(await rules(), []);
+    const by = await txs();
+    assert.deepEqual(view(by.get("fp-b")), ["Supermercado", "provider", null, "Supermercado"]);
+    assert.deepEqual(view(by.get("fp-j")), ["Salary", "provider", null, "Salary"]);
+    assert.deepEqual(view(by.get("fp-g")), ["Sem categoria", "none", null, null]);
+    assert.deepEqual(view(by.get("fp-l")), ["Sem categoria", "none", null, ""]);
+  });
+
+  test("POST cria no fim, aplica nas transações e conta os casamentos", async () => {
+    let r = await send("POST", "/api/rules", { pattern: " sintetica fp-[ab]$ ", category: " Lazer " });
+    assert.equal(r.status, 201);
+    r1 = (await r.json()) as CategoryRule;
+    assert.deepEqual({ ...r1, id: 0, createdAt: "" }, { id: 0, pattern: "sintetica fp-[ab]$", category: "Lazer", priority: 10, enabled: true, matchCount: 2, createdAt: "" });
+    assert.equal(r1.createdAt, NOW.toISOString());
+
+    r = await send("POST", "/api/rules", { pattern: "fp-b", category: "Feira" });
+    r2 = (await r.json()) as CategoryRule;
+    assert.deepEqual([r2.priority, r2.matchCount], [20, 0]); // fp-b já é da regra anterior
+
+    const by = await txs();
+    assert.deepEqual(view(by.get("fp-a")), ["Lazer", "rule", r1.id, "Compras"]);
+    assert.deepEqual(view(by.get("fp-b")), ["Lazer", "rule", r1.id, "Supermercado"]);
+    assert.equal(by.get("fp-a")?.kind, "expense"); // kind não muda
+
+    const s = await json<SummaryResponse>("/api/summary?month=2026-09");
+    assert.equal(s.expenseCents, 50_000);
+    assert.deepEqual(s.byCategory, [
+      { category: "Lazer", expenseCents: 50_000 },
+      { category: "Sem categoria", expenseCents: 5_000 },
+      { category: "Compras", expenseCents: -5_000 },
+    ]);
+    assert.deepEqual((await rules()).map((x) => [x.id, x.matchCount]), [[r1.id, 2], [r2.id, 0]]);
+  });
+
+  test("POST: priority explícita, validação e Content-Type", async () => {
+    const bad: unknown[] = [
+      {},
+      { pattern: "x" },
+      { category: "X" },
+      { pattern: "", category: "X" },
+      { pattern: "(abc", category: "X" },
+      { pattern: "a".repeat(201), category: "X" },
+      { pattern: "x", category: "" },
+      { pattern: "x", category: "c".repeat(61) },
+      { pattern: "x", category: "X", priority: 1.5 },
+      { pattern: "x", category: "X", priority: "1" },
+      { pattern: "x", category: "X", enabled: "sim" },
+      { pattern: "x", category: "X", outro: 1 },
+      [],
+      "{invalido",
+    ];
+    for (const b of bad) assert.equal((await send("POST", "/api/rules", b)).status, 400, JSON.stringify(b));
+    const regex = (await (await send("POST", "/api/rules", { pattern: "(", category: "X" })).json()) as { error: string };
+    assert.match(regex.error, /regex inválida/);
+    assert.equal((await req("/api/rules", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "{}" })).status, 415);
+
+    const r = await send("POST", "/api/rules", { pattern: "nada-casa", category: "Temporária", priority: 5, enabled: false });
+    const created = (await r.json()) as CategoryRule;
+    assert.deepEqual([r.status, created.priority, created.enabled], [201, 5, false]);
+    assert.equal((await send("DELETE", `/api/rules/${created.id}`)).status, 204);
+    assert.equal((await rules()).length, 2);
+  });
+
+  test("reorder reatribui 10, 20… e reaplica; exige o conjunto exato", async () => {
+    const r = await send("POST", "/api/rules/reorder", { ids: [r2.id, r1.id] });
+    assert.equal(r.status, 200);
+    const list = ((await r.json()) as RulesResponse).rules;
+    assert.deepEqual(list.map((x) => [x.id, x.priority, x.matchCount]), [[r2.id, 10, 1], [r1.id, 20, 1]]);
+    assert.deepEqual(view((await txs()).get("fp-b")), ["Feira", "rule", r2.id, "Supermercado"]);
+
+    for (const ids of [[r2.id], [r2.id, r1.id, 999], [r2.id, r2.id], [r1.id, 999], "x", [r2.id, String(r1.id)]]) {
+      assert.equal((await send("POST", "/api/rules/reorder", { ids })).status, 400, JSON.stringify(ids));
+    }
+    assert.equal((await send("POST", "/api/rules/reorder", { ids: [r2.id, r1.id], outro: 1 })).status, 400);
+  });
+
+  test("override > regra > fornecedor; ruleId continua com o override", async () => {
+    await patch("fp-b", { category: "Manual" });
+    assert.deepEqual(view((await txs()).get("fp-b")), ["Manual", "override", r2.id, "Supermercado"]);
+    await patch("fp-b", { category: null });
+    assert.deepEqual(view((await txs()).get("fp-b")), ["Feira", "rule", r2.id, "Supermercado"]);
+  });
+
+  test("preview: no fim ou no lugar de excludeRuleId, sem salvar", async () => {
+    let r = await send("POST", "/api/rules/preview", { pattern: "FP-[A-C]" });
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), {
+      matchCount: 1,
+      sample: [{ localDate: "2026-09-12", description: "Sintética fp-c", amountCents: 5_000, currentCategory: "Compras" }],
+    } satisfies RulePreviewResponse);
+
+    // no lugar da regra r1 (depois de r2): fp-b fica com r2; fp-a e fp-c casam
+    r = await send("POST", "/api/rules/preview", { pattern: "fp-[a-c]", excludeRuleId: r1.id });
+    const p = (await r.json()) as RulePreviewResponse;
+    assert.equal(p.matchCount, 2);
+    assert.deepEqual(p.sample.map((x) => [x.localDate, x.currentCategory]), [["2026-09-12", "Compras"], ["2026-09-10", "Lazer"]]);
+
+    // conta todas as transações, não só um mês
+    r = await send("POST", "/api/rules/preview", { pattern: "^sintetica" });
+    assert.equal(((await r.json()) as RulePreviewResponse).matchCount, 15 - 2);
+
+    for (const b of [{ pattern: "(" }, { pattern: "" }, { pattern: "x", excludeRuleId: "1" }, { pattern: "x", outro: 1 }]) {
+      assert.equal((await send("POST", "/api/rules/preview", b)).status, 400, JSON.stringify(b));
+    }
+    assert.deepEqual((await rules()).map((x) => x.matchCount), [1, 1]);
+  });
+
+  test("PATCH edita, desabilita e valida", async () => {
+    let r = await send("PATCH", `/api/rules/${r1.id}`, { enabled: false });
+    assert.equal(r.status, 200);
+    assert.deepEqual([((await r.json()) as CategoryRule).enabled, (await rules())[1]?.matchCount], [false, 0]);
+    assert.deepEqual(view((await txs()).get("fp-a")), ["Compras", "provider", null, "Compras"]);
+
+    r = await send("PATCH", `/api/rules/${r1.id}`, { enabled: true, category: "Lazer 2", priority: 1 });
+    const upd = (await r.json()) as CategoryRule;
+    assert.deepEqual([upd.pattern, upd.category, upd.priority, upd.enabled, upd.matchCount], ["sintetica fp-[ab]$", "Lazer 2", 1, true, 2]);
+    assert.equal(r1.createdAt, upd.createdAt);
+
+    for (const b of [{ pattern: "(" }, { category: "" }, { priority: null }, { enabled: 1 }, { foo: 1 }]) {
+      assert.equal((await send("PATCH", `/api/rules/${r1.id}`, b)).status, 400, JSON.stringify(b));
+    }
+    assert.equal((await send("PATCH", "/api/rules/9999", { enabled: true })).status, 404);
+    assert.equal((await send("PATCH", "/api/rules/abc", { enabled: true })).status, 400);
+  });
+
+  test("/api/categories usa as efetivas traduzidas e inclui as das regras", async () => {
+    const r = await json<CategoriesResponse>("/api/categories");
+    for (const c of ["Feira", "Lazer 2", "Supermercado", "Compras", "Sem categoria"]) assert.ok(r.categories.includes(c), c);
+    assert.ok(!r.categories.includes("Groceries"));
+    assert.ok(!r.categories.includes("Lazer"));
+    assert.deepEqual(r.categories, [...r.categories].sort((a, b) => a.localeCompare(b, "pt-BR")));
+  });
+
+  test("DELETE: Origin de outro site → 403; local sem Content-Type → 204; depois 404", async () => {
+    assert.equal((await send("DELETE", `/api/rules/${r1.id}`, undefined, { Origin: "https://evil.com" })).status, 403);
+    assert.equal((await rules()).length, 2);
+    assert.equal((await send("DELETE", `/api/rules/${r1.id}`, undefined, { Origin: "http://localhost:5173" })).status, 204);
+    assert.equal((await send("DELETE", `/api/rules/${r1.id}`)).status, 404);
+    assert.equal((await send("DELETE", `/api/rules/${r2.id}`)).status, 204);
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE rule_id IS NOT NULL OR rule_category IS NOT NULL").get(), { n: 0 });
+    assert.deepEqual(view((await txs()).get("fp-b")), ["Supermercado", "provider", null, "Supermercado"]);
+  });
 });

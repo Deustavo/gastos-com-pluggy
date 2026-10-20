@@ -3,8 +3,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openDb, seedConnections, type Db } from "../src/db/index.ts";
-import type { Account, Bill, ConnectionStatus, DataProvider, DateRange, Transaction } from "../src/providers/types.ts";
+import Database from "better-sqlite3";
+import { openDb, SCHEMA_VERSION, seedConnections, type Db } from "../src/db/index.ts";
+import type {
+  Account,
+  Bill,
+  ConnectionStatus,
+  DataProvider,
+  DateRange,
+  ProviderCategory,
+  Transaction,
+} from "../src/providers/types.ts";
 import { fingerprint } from "../src/sync/fingerprint.ts";
 import { SyncService, type SyncReport } from "../src/sync/sync.ts";
 
@@ -210,6 +219,142 @@ test("sync de ponta a ponta com FakeProvider", async () => {
     assert.ok(!r2.alerts.some((a) => /duplicado/.test(a)));
   } finally {
     db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- Fase 3: tradução, regras e migração ----
+
+class FakeProviderWithCategories extends FakeProvider {
+  calls = 0;
+  constructor(itemsById: Record<string, FakeItem>, private categories: ProviderCategory[] | Error) {
+    super(itemsById);
+  }
+  async listCategories(): Promise<ProviderCategory[]> {
+    this.calls++;
+    if (this.categories instanceof Error) throw this.categories;
+    return this.categories;
+  }
+}
+
+function withDb(fn: (db: Db, file: string) => Promise<void> | void): () => Promise<void> {
+  return async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openfinance-f3-"));
+    const file = path.join(dir, "app.db");
+    const db = openDb(file);
+    try {
+      await fn(db, file);
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+
+const effective = (db: Db, t: Transaction) =>
+  db.prepare("SELECT effective_category AS c, category_source AS s, provider_category_pt AS p FROM v_transactions WHERE fingerprint = ?").get(fingerprint(t));
+
+test(
+  "sync traduz categorias (1x por provider) e aplica regras no fim",
+  withDb(async (db) => {
+    seedConnections(db, "fake", ["item-bank", "item-card"]);
+    const fake = new FakeProviderWithCategories(items, [
+      { name: "Groceries", namePt: "Supermercado" },
+      { name: "Salary", namePt: "" }, // sem tradução: fica o original
+      { name: "", namePt: "Vazia" }, // ignorada
+    ]);
+    // regra criada antes do sync: casa sem acento com a descrição sintética
+    db.prepare("INSERT INTO category_rules (pattern, category, priority, created_at) VALUES (?, ?, 10, ?)").run(
+      `^sintetica ${groceries.order}$`, "Feira", NOW.toISOString(),
+    );
+    const r = await new SyncService(db, { fake }).run({ now: NOW });
+
+    assert.equal(fake.calls, 1);
+    assert.deepEqual(db.prepare("SELECT provider, name, name_pt FROM provider_categories ORDER BY name").all(), [
+      { provider: "fake", name: "Groceries", name_pt: "Supermercado" },
+      { provider: "fake", name: "Salary", name_pt: "Salary" },
+    ]);
+    assert.deepEqual(effective(db, groceries), { c: "Feira", s: "rule", p: "Supermercado" });
+    assert.deepEqual(effective(db, salary), { c: "Salary", s: "provider", p: "Salary" });
+    assert.deepEqual(effective(db, billPayment), { c: "Transfers", s: "provider", p: "Transfers" });
+    // kind continua vindo da categoria do fornecedor
+    assert.equal((db.prepare("SELECT kind FROM transactions WHERE fingerprint = ?").get(fingerprint(groceries)) as { kind: string }).kind, "expense");
+    assert.deepEqual(r.alerts.filter((a) => /categorias/.test(a)), []);
+
+    // novo sync reescreve as linhas: a regra é reaplicada
+    await new SyncService(db, { fake }).run({ now: NOW });
+    assert.deepEqual(effective(db, groceries), { c: "Feira", s: "rule", p: "Supermercado" });
+    assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE rule_id IS NOT NULL").get(), { n: 1 });
+  }),
+);
+
+test(
+  "listCategories falhando vira alerta e não derruba o sync",
+  withDb(async (db) => {
+    seedConnections(db, "fake", ["item-bank"]);
+    const fake = new FakeProviderWithCategories(items, new Error("falha sintética nas categorias"));
+    const r = await new SyncService(db, { fake }).run({ now: NOW });
+    assert.equal(conn(r, 0).status, "success");
+    assert.ok(r.alerts.some((a) => /categorias de fake: falha sintética/.test(a)));
+    assert.deepEqual(effective(db, groceries), { c: "Groceries", s: "provider", p: "Groceries" });
+  }),
+);
+
+// Schema da fase 2: tabelas base (schema.sql não muda mais; mudanças são migrações) e a view antiga
+const PHASE2_VIEW = `
+  CREATE VIEW v_transactions AS
+  SELECT t.*, COALESCE(o.category, t.category) AS effective_category, COALESCE(o.ignored, 0) AS ignored,
+    o.category AS override_category, o.note AS override_note
+  FROM transactions t LEFT JOIN overrides o ON o.fingerprint = t.fingerprint;`;
+
+const schemaOf = (db: Db) =>
+  db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all();
+
+test("migração: banco da fase 2 e banco novo chegam ao mesmo schema; dados preservados", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openfinance-mig-"));
+  try {
+    const oldFile = path.join(dir, "old.db");
+    const raw = new Database(oldFile);
+    raw.exec(fs.readFileSync(path.join(import.meta.dirname, "../src/db/schema.sql"), "utf8"));
+    raw.exec(PHASE2_VIEW);
+    raw.exec(`
+      INSERT INTO connections VALUES (1, 'fake', 'item-1', NULL, '2026-01-01T00:00:00.000Z');
+      INSERT INTO accounts (id, connection_id, external_id, type) VALUES (1, 1, 'acc-1', 'BANK');
+      INSERT INTO transactions (account_id, fingerprint, date, local_date, description, amount_cents_raw, direction,
+        amount_cents_abs, status, category, kind, synced_at)
+      VALUES (1, 'fp-old', '2026-09-01T15:00:00.000Z', '2026-09-01', 'Sintética antiga', -100, 'OUT', 100, 'POSTED', 'Shopping', 'expense', 'x');
+      INSERT INTO overrides (fingerprint, category, ignored) VALUES ('fp-old', NULL, 1);`);
+    assert.equal(raw.pragma("user_version", { simple: true }), 0);
+    raw.close();
+
+    const migrated = openDb(oldFile);
+    const fresh = openDb(path.join(dir, "new.db"));
+    try {
+      assert.equal(SCHEMA_VERSION, 1);
+      assert.equal(migrated.pragma("user_version", { simple: true }), SCHEMA_VERSION);
+      assert.equal(fresh.pragma("user_version", { simple: true }), SCHEMA_VERSION);
+      assert.deepEqual(schemaOf(migrated), schemaOf(fresh));
+      const cols = (migrated.pragma("table_info(transactions)") as { name: string }[]).map((c) => c.name);
+      assert.ok(cols.includes("rule_id") && cols.includes("rule_category"));
+
+      assert.deepEqual(
+        migrated.prepare("SELECT description, kind, effective_category, category_source, ignored, rule_id FROM v_transactions").all(),
+        [{ description: "Sintética antiga", kind: "expense", effective_category: "Shopping", category_source: "provider", ignored: 1, rule_id: null }],
+      );
+    } finally {
+      migrated.close();
+      fresh.close();
+    }
+
+    // reabrir é idempotente
+    const again = openDb(oldFile);
+    try {
+      assert.equal(again.pragma("user_version", { simple: true }), SCHEMA_VERSION);
+      assert.deepEqual(again.prepare("SELECT COUNT(*) AS n FROM transactions").get(), { n: 1 });
+    } finally {
+      again.close();
+    }
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

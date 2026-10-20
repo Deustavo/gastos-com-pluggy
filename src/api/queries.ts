@@ -1,13 +1,18 @@
 // Consultas da API: funções puras sobre o Db que montam as respostas do contrato.
-// Leem de v_transactions (overrides já aplicados).
+// Leem de v_transactions (tradução, regras e overrides já aplicados).
 
+import { byPriority, compileRule, compileRules, loadRules, matchRule, type CompiledRule } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Kind } from "../sync/classify.ts";
 import type {
   CategoriesResponse,
+  CategoryRule,
+  CategorySource,
   ConnectionHealth,
   ConnectionsResponse,
   OverrideResponse,
+  RulePreviewResponse,
+  RulesResponse,
   SummaryResponse,
   TransactionRow,
   TransactionsResponse,
@@ -98,6 +103,8 @@ interface TxRow {
   kind: Kind;
   status: "POSTED" | "PENDING";
   category: string;
+  category_source: CategorySource;
+  rule_id: number | null;
   provider_category: string | null;
   override_category: string | null;
   ignored: number;
@@ -129,7 +136,8 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
     .prepare(`
       SELECT t.id, t.fingerprint, t.account_id, a.type AS account_type, a.number_last4, a.name AS account_name,
         t.local_date, t.description, t.direction, t.amount_cents_abs, t.kind, t.status,
-        ${CATEGORY_SQL} AS category, t.category AS provider_category, t.override_category, t.ignored,
+        ${CATEGORY_SQL} AS category, t.category_source, t.rule_id, t.provider_category_pt AS provider_category,
+        t.override_category, t.ignored,
         t.override_note, t.installment_number, t.total_installments
       FROM v_transactions t JOIN accounts a ON a.id = t.account_id
       WHERE ${where.join(" AND ")}
@@ -148,6 +156,8 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
       kind: r.kind,
       status: r.status,
       category: r.category,
+      categorySource: r.category_source,
+      ruleId: r.rule_id,
       providerCategory: r.provider_category,
       overridden: r.override_category !== null,
       ignored: r.ignored === 1,
@@ -161,8 +171,11 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
   return { items };
 }
 
+// Categorias efetivas das transações mais as usadas por regras (mesmo sem transação ainda)
 export function listCategories(db: Db): CategoriesResponse {
-  const rows = db.prepare(`SELECT DISTINCT ${CATEGORY_SQL} AS c FROM v_transactions`).all() as { c: string }[];
+  const rows = db
+    .prepare(`SELECT ${CATEGORY_SQL} AS c FROM v_transactions UNION SELECT category FROM category_rules`)
+    .all() as { c: string }[];
   return { categories: rows.map((r) => r.c).sort((a, b) => a.localeCompare(b, "pt-BR")) };
 }
 
@@ -229,4 +242,121 @@ export function saveOverride(db: Db, o: OverrideResponse): void {
     ON CONFLICT (fingerprint) DO UPDATE SET category = excluded.category, ignored = excluded.ignored, note = excluded.note`).run(
     o.fingerprint, o.category, o.ignored ? 1 : 0, o.note,
   );
+}
+
+// ---- Regras de categorização ----
+
+interface RuleRow {
+  id: number;
+  pattern: string;
+  category: string;
+  priority: number;
+  enabled: number;
+  created_at: string;
+  match_count: number;
+}
+
+const RULE_SELECT = `
+  SELECT r.id, r.pattern, r.category, r.priority, r.enabled, r.created_at,
+    (SELECT COUNT(*) FROM transactions t WHERE t.rule_id = r.id) AS match_count
+  FROM category_rules r`;
+
+const toRule = (r: RuleRow): CategoryRule => ({
+  id: r.id,
+  pattern: r.pattern,
+  category: r.category,
+  priority: r.priority,
+  enabled: r.enabled === 1,
+  matchCount: r.match_count,
+  createdAt: r.created_at,
+});
+
+export function listRules(db: Db): RulesResponse {
+  const rows = db.prepare(`${RULE_SELECT} ORDER BY r.priority, r.id`).all() as RuleRow[];
+  return { rules: rows.map(toRule) };
+}
+
+export function getRule(db: Db, id: number): CategoryRule | undefined {
+  const r = db.prepare(`${RULE_SELECT} WHERE r.id = ?`).get(id) as RuleRow | undefined;
+  return r && toRule(r);
+}
+
+export interface RuleInput {
+  pattern: string;
+  category: string;
+  priority?: number;
+  enabled: boolean;
+}
+
+// priority ausente = fim da lista (max + 10)
+export function insertRule(db: Db, r: RuleInput, now: Date): number {
+  const priority =
+    r.priority ?? (db.prepare("SELECT COALESCE(MAX(priority), 0) + 10 AS p FROM category_rules").get() as { p: number }).p;
+  return Number(
+    db
+      .prepare("INSERT INTO category_rules (pattern, category, priority, enabled, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(r.pattern, r.category, priority, r.enabled ? 1 : 0, now.toISOString()).lastInsertRowid,
+  );
+}
+
+export function updateRule(db: Db, r: Omit<CategoryRule, "matchCount" | "createdAt">): void {
+  db.prepare("UPDATE category_rules SET pattern = ?, category = ?, priority = ?, enabled = ? WHERE id = ?").run(
+    r.pattern, r.category, r.priority, r.enabled ? 1 : 0, r.id,
+  );
+}
+
+export function deleteRule(db: Db, id: number): boolean {
+  return db.prepare("DELETE FROM category_rules WHERE id = ?").run(id).changes > 0;
+}
+
+export function ruleIds(db: Db): number[] {
+  return (db.prepare("SELECT id FROM category_rules").all() as { id: number }[]).map((r) => r.id);
+}
+
+// Reatribui priority 10, 20, 30… na ordem de `ids` (o chamador garante que é o conjunto completo).
+export function reorderRules(db: Db, ids: number[]): void {
+  const update = db.prepare("UPDATE category_rules SET priority = ? WHERE id = ?");
+  db.transaction(() => ids.forEach((id, i) => update.run((i + 1) * 10, id)))();
+}
+
+const PREVIEW_SAMPLE = 20;
+
+// Testa um padrão (já validado) em todas as transações, no lugar de `excludeRuleId` ou no fim.
+export function previewRule(db: Db, pattern: string, excludeRuleId?: number): RulePreviewResponse {
+  const all = loadRules(db);
+  const replaced = all.find((r) => r.id === excludeRuleId);
+  const others = compileRules(all.filter((r) => r.id !== excludeRuleId && r.enabled));
+  const last = others.reduce((max, r) => Math.max(max, r.priority), 0);
+  // No lugar da regra editada herda a posição (priority e id) dela; senão vai para o fim
+  const candidate: CompiledRule = {
+    id: replaced?.id ?? Number.MAX_SAFE_INTEGER,
+    pattern,
+    category: "",
+    priority: replaced?.priority ?? last + 10,
+    enabled: true,
+    re: compileRule(pattern),
+  };
+  const rules = [...others, candidate].sort(byPriority);
+
+  const rows = db
+    .prepare(`
+      SELECT local_date, description, direction, amount_cents_abs, ${CATEGORY_SQL} AS category
+      FROM v_transactions ORDER BY local_date DESC, date DESC, id DESC`)
+    .all() as { local_date: string; description: string | null; direction: "IN" | "OUT"; amount_cents_abs: number; category: string }[];
+
+  let matchCount = 0;
+  const sample: RulePreviewResponse["sample"] = [];
+  for (const r of rows) {
+    if (matchRule(rules, r.description ?? "") !== candidate) continue;
+    matchCount++;
+    if (sample.length < PREVIEW_SAMPLE) {
+      sample.push({
+        localDate: r.local_date,
+        description: r.description ?? "",
+        amountCents: r.direction === "OUT" ? -r.amount_cents_abs : r.amount_cents_abs,
+        currentCategory: r.category,
+      });
+    }
+  }
+  return { matchCount, sample };
 }
