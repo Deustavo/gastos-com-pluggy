@@ -1,6 +1,7 @@
 import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { SummaryResponse } from "../../../src/api/contract.ts";
-import { formatCents, formatCentsCompact, formatMonthLong, formatMonthShort } from "../format.ts";
+import { formatMonthLong, formatMonthShort } from "../format.ts";
+import { useMoney } from "../privacy.ts";
 import { Panel } from "./Panel.tsx";
 import { useChartColors } from "../useChartColors.ts";
 
@@ -15,12 +16,14 @@ interface Props {
 // Gasto (barras) e receita (linha) no mesmo eixo: ambos em R$, sem eixo duplo.
 export function MonthlyChart({ summary, loading, error, month, onSelect }: Props) {
   const colors = useChartColors();
+  const money = useMoney();
   const data = summary?.monthly ?? [];
   const hasData = data.some((d) => d.expenseCents !== 0 || d.incomeCents !== 0);
 
   return (
     <Panel
       title="Evolução em 12 meses"
+      icon="chart"
       className="panel-monthly"
       loading={loading && !summary}
       refreshing={loading && !!summary}
@@ -43,7 +46,7 @@ export function MonthlyChart({ summary, loading, error, month, onSelect }: Props
               >
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="month" tickFormatter={(v: string) => formatMonthShort(v)} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tickFormatter={(v: number) => formatCentsCompact(v)} tickLine={false} axisLine={false} width={72} />
+                <YAxis tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} width={72} />
                 <Tooltip
                   cursor={{ className: "chart-cursor" }}
                   content={({ active, payload, label }) => {
@@ -53,10 +56,10 @@ export function MonthlyChart({ summary, loading, error, month, onSelect }: Props
                       <div className="tooltip">
                         <div className="tooltip-title">{formatMonthLong(String(label ?? item.month))}</div>
                         <div>
-                          <span className="swatch swatch-expense" /> Gasto: {formatCents(item.expenseCents)}
+                          <span className="swatch swatch-expense" /> Gasto: {money.cents(item.expenseCents)}
                         </div>
                         <div>
-                          <span className="swatch swatch-income" /> Receita: {formatCents(item.incomeCents)}
+                          <span className="swatch swatch-income" /> Receita: {money.cents(item.incomeCents)}
                         </div>
                       </div>
                     );

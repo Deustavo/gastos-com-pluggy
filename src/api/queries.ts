@@ -171,10 +171,15 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
   return { items };
 }
 
-// Categorias efetivas das transações mais as usadas por regras (mesmo sem transação ainda)
+// Categorias efetivas das transações, as usadas por regras e as do fornecedor em pt-BR
+// (mesmo sem transação ainda, para poderem ser escolhidas, ex.: "Moradia")
 export function listCategories(db: Db): CategoriesResponse {
   const rows = db
-    .prepare(`SELECT ${CATEGORY_SQL} AS c FROM v_transactions UNION SELECT category FROM category_rules`)
+    .prepare(
+      `SELECT ${CATEGORY_SQL} AS c FROM v_transactions
+       UNION SELECT category FROM category_rules
+       UNION SELECT name_pt FROM provider_categories WHERE TRIM(name_pt) <> ''`,
+    )
     .all() as { c: string }[];
   return { categories: rows.map((r) => r.c).sort((a, b) => a.localeCompare(b, "pt-BR")) };
 }

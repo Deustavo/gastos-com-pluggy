@@ -502,9 +502,10 @@ describe("regras de categorização (fase 3)", () => {
     assert.equal((await send("PATCH", "/api/rules/abc", { enabled: true })).status, 400);
   });
 
-  test("/api/categories usa as efetivas traduzidas e inclui as das regras", async () => {
+  test("/api/categories usa as efetivas traduzidas e inclui as das regras e as do fornecedor", async () => {
+    db.exec("INSERT INTO provider_categories VALUES ('fake', 'Housing', 'Moradia')");
     const r = await json<CategoriesResponse>("/api/categories");
-    for (const c of ["Feira", "Lazer 2", "Supermercado", "Compras", "Sem categoria"]) assert.ok(r.categories.includes(c), c);
+    for (const c of ["Feira", "Lazer 2", "Supermercado", "Compras", "Sem categoria", "Moradia"]) assert.ok(r.categories.includes(c), c);
     assert.ok(!r.categories.includes("Groceries"));
     assert.ok(!r.categories.includes("Lazer"));
     assert.deepEqual(r.categories, [...r.categories].sort((a, b) => a.localeCompare(b, "pt-BR")));

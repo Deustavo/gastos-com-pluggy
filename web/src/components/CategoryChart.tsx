@@ -1,6 +1,7 @@
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { SummaryResponse } from "../../../src/api/contract.ts";
-import { formatCents, formatCentsCompact } from "../format.ts";
+import { useMoney } from "../privacy.ts";
+import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
 import { useChartColors } from "../useChartColors.ts";
 
@@ -16,12 +17,14 @@ const ROW_PX = 30;
 
 export function CategoryChart({ summary, loading, error, selected, onSelect }: Props) {
   const colors = useChartColors();
+  const money = useMoney();
   const data = [...(summary?.byCategory ?? [])].sort((a, b) => b.expenseCents - a.expenseCents);
   const total = data.reduce((n, d) => n + Math.max(0, d.expenseCents), 0);
 
   return (
     <Panel
       title="Gasto por categoria"
+      icon="pie"
       className="panel-category"
       loading={loading && !summary}
       refreshing={loading && !!summary}
@@ -30,7 +33,7 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
       actions={
         selected && (
           <button type="button" className="chip active" onClick={() => onSelect(undefined)}>
-            {selected} ✕
+            {selected} <Icon name="x" size={12} />
           </button>
         )
       }
@@ -42,7 +45,7 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }} barCategoryGap={4}>
                 <CartesianGrid horizontal={false} />
-                <XAxis type="number" tickFormatter={(v: number) => formatCentsCompact(v)} tickLine={false} axisLine={false} />
+                <XAxis type="number" tickFormatter={(v: number) => money.compact(v)} tickLine={false} axisLine={false} />
                 <YAxis
                   type="category"
                   dataKey="category"
@@ -62,7 +65,7 @@ export function CategoryChart({ summary, loading, error, selected, onSelect }: P
                       <div className="tooltip">
                         <div className="tooltip-title">{item.category}</div>
                         <div>
-                          {formatCents(item.expenseCents)} <span className="muted">({pct}%)</span>
+                          {money.cents(item.expenseCents)} <span className="muted">({pct}%)</span>
                         </div>
                       </div>
                     );

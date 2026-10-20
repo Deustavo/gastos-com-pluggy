@@ -13,7 +13,12 @@ import { suggestRulePattern } from "./ruleSuggest.ts";
 import { useAsync } from "./useAsync.ts";
 
 export function App() {
-  const [month, setMonth] = useState(currentMonth);
+  const [month, setMonthRaw] = useState(currentMonth);
+  // Nunca além do mês corrente (vale para o cabeçalho e para o clique no gráfico).
+  const setMonth = useCallback((m: string) => {
+    const now = currentMonth();
+    setMonthRaw(m > now ? now : m);
+  }, []);
   // dataVersion: recarrega resumo, lista, categorias e regras (após editar); syncVersion: tudo, inclusive conexões
   const [dataVersion, setDataVersion] = useState(0);
   const [syncVersion, setSyncVersion] = useState(0);

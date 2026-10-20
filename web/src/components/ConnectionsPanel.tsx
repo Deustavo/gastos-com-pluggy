@@ -1,5 +1,7 @@
 import type { ConnectionHealth, ConnectionsResponse } from "../../../src/api/contract.ts";
-import { formatCents, formatDateTime } from "../format.ts";
+import { formatDateTime } from "../format.ts";
+import { useMoney } from "../privacy.ts";
+import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
 
 interface Props {
@@ -17,6 +19,7 @@ export function ConnectionsPanel({ data, loading, error }: Props) {
   return (
     <Panel
       title="Saúde das conexões"
+      icon="landmark"
       className="panel-conn"
       loading={loading && !data}
       refreshing={loading && !!data}
@@ -45,6 +48,7 @@ function consent(c: ConnectionHealth): { cls: string; text: string } {
 }
 
 function ConnectionCard({ c }: { c: ConnectionHealth }) {
+  const money = useMoney();
   const cs = consent(c);
   const run = c.lastRun;
   const runBad = run?.status === "error";
@@ -78,7 +82,7 @@ function ConnectionCard({ c }: { c: ConnectionHealth }) {
         <dt>Consentimento</dt>
         <dd>
           <span className={`consent ${cs.cls}`}>
-            {cs.cls === "consent-bad" ? "⛔ " : cs.cls === "consent-warn" ? "⚠ " : ""}
+            {cs.cls === "consent-bad" || cs.cls === "consent-warn" ? <Icon name="alert" size={13} /> : null}
             {cs.text}
           </span>
         </dd>
@@ -92,7 +96,7 @@ function ConnectionCard({ c }: { c: ConnectionHealth }) {
                   {a.name ?? a.subtype ?? (a.type === "CREDIT" ? "Cartão" : "Conta")}
                   {a.numberLast4 && <span className="muted"> ••••{a.numberLast4}</span>}
                 </td>
-                <td className="num nowrap">{a.balanceCents === null ? "—" : formatCents(a.balanceCents)}</td>
+                <td className="num nowrap">{a.balanceCents === null ? "—" : money.cents(a.balanceCents)}</td>
               </tr>
             ))}
           </tbody>

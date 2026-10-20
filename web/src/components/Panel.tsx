@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { Icon, type IconName } from "./Icon.tsx";
 
 interface PanelProps {
   title: string;
+  icon?: IconName;
   actions?: ReactNode;
   className?: string;
   loading?: boolean; // carregando sem nenhum dado ainda
@@ -12,7 +14,7 @@ interface PanelProps {
 }
 
 // Moldura comum dos blocos, com os estados de carregando, erro e vazio.
-export function Panel({ title, actions, className, loading, refreshing, error, empty, children }: PanelProps) {
+export function Panel({ title, icon, actions, className, loading, refreshing, error, empty, children }: PanelProps) {
   let body: ReactNode;
   if (loading) body = <div className="state state-loading">Carregando…</div>;
   else if (error && !children) body = <div className="state state-error">Erro: {error}</div>;
@@ -23,6 +25,11 @@ export function Panel({ title, actions, className, loading, refreshing, error, e
     <section className={`panel ${className ?? ""}`} aria-busy={loading || refreshing}>
       <header className="panel-head">
         <h2>
+          {icon && (
+            <span className="panel-icon">
+              <Icon name={icon} />
+            </span>
+          )}
           {title}
           {refreshing && !loading && <span className="spinner" aria-label="atualizando" />}
         </h2>

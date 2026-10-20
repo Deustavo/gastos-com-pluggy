@@ -1,7 +1,9 @@
 import { useEffect, useId, useState } from "react";
 import type { CategoryRule, RulePreviewResponse } from "../../../src/api/contract.ts";
 import { api } from "../api.ts";
-import { formatCents, formatDay } from "../format.ts";
+import { formatDay } from "../format.ts";
+import { useMoney } from "../privacy.ts";
+import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
 
 // Pedido de "Criar regra…" vindo da lista de transações. `nonce` muda a cada clique,
@@ -80,6 +82,7 @@ export function RulesPanel({ rules, loading, error, categories, draft, onChanged
   return (
     <Panel
       title="Regras de categorização"
+      icon="sliders"
       className="panel-rules"
       loading={loading && !rules}
       refreshing={(loading && !!rules) || busy}
@@ -88,7 +91,7 @@ export function RulesPanel({ rules, loading, error, categories, draft, onChanged
         rules &&
         !form && (
           <button type="button" className="small-btn" onClick={() => setForm({ id: null, pattern: "", category: "" })}>
-            + Nova regra
+            <Icon name="plus" size={14} /> Nova regra
           </button>
         )
       }
@@ -153,7 +156,7 @@ export function RulesPanel({ rules, loading, error, categories, draft, onChanged
                       title="Mover para cima"
                       aria-label="Mover para cima"
                     >
-                      ↑
+                      <Icon name="chevronUp" size={14} />
                     </button>
                     <button
                       type="button"
@@ -163,7 +166,7 @@ export function RulesPanel({ rules, loading, error, categories, draft, onChanged
                       title="Mover para baixo"
                       aria-label="Mover para baixo"
                     >
-                      ↓
+                      <Icon name="chevronDown" size={14} />
                     </button>
                     {confirmDelete === r.id ? (
                       <span className="confirm">
@@ -261,6 +264,7 @@ function RuleForm({
   onCancel: () => void;
   onSave: (f: FormState) => Promise<boolean>;
 }) {
+  const money = useMoney();
   const [pattern, setPattern] = useState(initial.pattern);
   const [category, setCategory] = useState(initial.category);
   const preview = usePreview(pattern, initial.id);
@@ -358,7 +362,7 @@ function RuleForm({
                           </td>
                           <td data-label="Descrição">{s.description}</td>
                           <td className={`num nowrap ${s.amountCents < 0 ? "neg" : s.amountCents > 0 ? "pos" : ""}`} data-label="Valor">
-                            {formatCents(s.amountCents)}
+                            {money.cents(s.amountCents)}
                           </td>
                           <td data-label="Categoria">
                             {same ? (

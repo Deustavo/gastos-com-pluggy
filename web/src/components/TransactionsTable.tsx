@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import type { CategoryRule, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
-import { formatCents, formatDay, KIND_LABEL } from "../format.ts";
+import { formatDay, KIND_LABEL } from "../format.ts";
+import { useMoney } from "../privacy.ts";
+import { Icon } from "./Icon.tsx";
 import { Panel } from "./Panel.tsx";
 
 export type StatusFilter = "ALL" | "POSTED" | "PENDING";
@@ -26,6 +28,7 @@ interface Props {
 
 // Kinds que não são gasto (ficam ocultos por padrão). refund fica visível: abate o gasto.
 const NON_EXPENSE = new Set(["transfer", "card_payment", "income"]);
+const NEUTRAL = new Set(["transfer", "card_payment"]);
 
 export function TransactionsTable({
   rows,
@@ -49,12 +52,13 @@ export function TransactionsTable({
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
   }, [all, filters.account]);
 
+  // Filtro só oferece categorias presentes no mês; a lista completa fica para a edição.
   const filterCategories = useMemo(() => {
-    const s = new Set(categories);
+    const s = new Set<string>();
     for (const r of all) s.add(r.category);
     if (filters.category) s.add(filters.category);
     return [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [all, categories, filters.category]);
+  }, [all, filters.category]);
 
   const visible = all.filter(
     (r) =>
@@ -113,23 +117,20 @@ export function TransactionsTable({
           className="link-btn"
           onClick={() => set({ category: undefined, account: undefined, status: "ALL" })}
         >
-          limpar filtros
+          <Icon name="x" size={12} /> limpar filtros
         </button>
       )}
     </div>
   );
 
-  const emptyMsg = !rows
-    ? false
-    : all.length === 0
-      ? "Nenhuma transação neste mês."
-      : visible.length === 0
-        ? "Nenhuma transação com esses filtros."
-        : false;
+  // Mês vazio usa o estado do Panel; vazio por filtro fica dentro do corpo para os filtros continuarem acessíveis.
+  const emptyMsg = rows && all.length === 0 ? "Nenhuma transação neste mês." : false;
+  const filteredOut = !!rows && all.length > 0 && visible.length === 0;
 
   return (
     <Panel
       title="Transações do mês"
+      icon="receipt"
       className="panel-tx"
       loading={loading && !rows}
       refreshing={loading && !!rows}
@@ -145,6 +146,25 @@ export function TransactionsTable({
       }
     >
       {rows && toolbar}
+      {filteredOut && (
+        <div className="state state-empty">
+          Nenhuma transação com esses filtros.
+          {(anyFilter || hiddenNonExpense > 0) && (
+            <div className="state-actions">
+              {anyFilter && (
+                <button type="button" className="small-btn" onClick={() => set({ category: undefined, account: undefined, status: "ALL" })}>
+                  <Icon name="x" size={12} /> Limpar filtros
+                </button>
+              )}
+              {!filters.showNonExpense && hiddenNonExpense > 0 && (
+                <button type="button" className="small-btn" onClick={() => set({ showNonExpense: true })}>
+                  <Icon name="eye" size={12} /> Mostrar transferências, faturas e receitas
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {rows && visible.length > 0 && (
         <div className="table-wrap">
           <table className="tx-table">
@@ -194,6 +214,7 @@ function TxRow({
   onOverride: (fingerprint: string, body: OverrideRequest) => Promise<void>;
   onCreateRule: (row: TransactionRow) => void;
 }) {
+  const money = useMoney();
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
@@ -245,7 +266,8 @@ function TxRow({
         ? { label: "regra", cls: "src-rule", title: rule ? `Regra: ${rule.pattern}` : "Categoria definida por uma regra" }
         : undefined;
 
-  const amountClass = row.amountCents < 0 ? "neg" : row.amountCents > 0 ? "pos" : "";
+  // Transferências e pagamentos de fatura são neutros (azul): não são gasto nem ganho.
+  const amountClass = NEUTRAL.has(row.kind) ? "neutral" : row.amountCents < 0 ? "neg" : row.amountCents > 0 ? "pos" : "";
 
   return (
     <tr className={`${row.ignored ? "ignored" : ""} ${saving ? "saving" : ""}`}>
@@ -327,7 +349,7 @@ function TxRow({
         {err && <div className="row-error">{err}</div>}
       </td>
       <td className={`num nowrap ${amountClass}`} data-label="Valor">
-        {formatCents(row.amountCents)}
+        {money.cents(row.amountCents)}
       </td>
       <td className="center" data-label="Ignorar">
         <input

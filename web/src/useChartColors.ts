@@ -12,8 +12,8 @@ function read(): ChartColors {
   const s = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string) => s.getPropertyValue(name).trim() || fallback;
   return {
-    series1: v("--series-1", "#2a78d6"),
-    series2: v("--series-2", "#eb6834"),
+    series1: v("--series-1", "#d63c3c"),
+    series2: v("--series-2", "#1f9d55"),
     surface: v("--surface", "#fcfcfb"),
   };
 }
