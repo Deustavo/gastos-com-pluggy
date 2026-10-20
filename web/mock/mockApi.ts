@@ -18,7 +18,7 @@ import type {
   TransactionRow,
 } from "../../src/api/contract.ts";
 
-const CATS = ["Mercado", "Restaurantes", "Transporte", "Moradia", "Lazer", "Saúde"];
+const CATS = ["Mercado", "Restaurantes", "Transporte", "Moradia", "Lazer", "Saúde", "Limpeza da casa"];
 const overrides = new Map<string, { category?: string | null; ignored?: boolean }>();
 let syncing = false;
 

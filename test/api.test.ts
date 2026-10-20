@@ -208,7 +208,7 @@ describe("GET /api/transactions", () => {
 
 test("GET /api/categories: distintas, ordenadas, com 'Sem categoria'", async () => {
   const r = await json<CategoriesResponse>("/api/categories");
-  assert.deepEqual(r.categories, ["Food", "Groceries", "Investments", "Salary", "Sem categoria", "Shopping", "Transfers"]);
+  assert.deepEqual(r.categories, ["Food", "Groceries", "Investments", "Limpeza da casa", "Salary", "Sem categoria", "Shopping", "Transfers"]);
 });
 
 test("GET /api/connections: consentimento, último run e contas", async () => {

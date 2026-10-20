@@ -20,6 +20,8 @@ import type {
 
 const DAY_MS = 86_400_000;
 export const NO_CATEGORY = "Sem categoria";
+// Categorias próprias, sempre oferecidas na escolha mesmo sem transação, regra ou fornecedor
+export const EXTRA_CATEGORIES = ["Limpeza da casa"];
 
 // Categoria efetiva com o vazio normalizado (mesma expressão no SELECT e nos filtros)
 const CATEGORY_SQL = `COALESCE(NULLIF(TRIM(effective_category), ''), '${NO_CATEGORY}')`;
@@ -172,7 +174,7 @@ export function listTransactions(db: Db, f: TransactionFilters): TransactionsRes
 }
 
 // Categorias efetivas das transações, as usadas por regras e as do fornecedor em pt-BR
-// (mesmo sem transação ainda, para poderem ser escolhidas, ex.: "Moradia")
+// (mesmo sem transação ainda, para poderem ser escolhidas, ex.: "Moradia") e as próprias
 export function listCategories(db: Db): CategoriesResponse {
   const rows = db
     .prepare(
@@ -181,7 +183,8 @@ export function listCategories(db: Db): CategoriesResponse {
        UNION SELECT name_pt FROM provider_categories WHERE TRIM(name_pt) <> ''`,
     )
     .all() as { c: string }[];
-  return { categories: rows.map((r) => r.c).sort((a, b) => a.localeCompare(b, "pt-BR")) };
+  const all = new Set([...rows.map((r) => r.c), ...EXTRA_CATEGORIES]);
+  return { categories: [...all].sort((a, b) => a.localeCompare(b, "pt-BR")) };
 }
 
 export function listConnections(db: Db, now: Date): ConnectionsResponse {
