@@ -1,7 +1,7 @@
 # Próximos passos (handoff)
 
-> Para retomar numa sessão nova: *"Leia `docs/PROXIMOS_PASSOS.md` e `docs/PLANO.md` e comece a fase 2."*
-> Estado em **2026-10-20** (fase 1 concluída).
+> Para retomar numa sessão nova: *"Leia `docs/PROXIMOS_PASSOS.md` e `docs/PLANO.md` e comece a fase 3."*
+> Estado em **2026-10-20** (fases 1 e 2 concluídas).
 
 ## Contexto em 30 segundos
 
@@ -175,7 +175,39 @@ como "a confirmar".
 - [x] `npm run typecheck` sem erros.
 - [x] Uma conexão com erro não impede o sync das outras.
 
-## Fase 2: dashboard
+## Fase 2: dashboard (concluída em 2026-10-20)
+
+Como usar:
+- `npm run dashboard`: faz o build do front e sobe tudo em http://127.0.0.1:8787.
+- Desenvolvimento: `npm run api` (porta 8787) + `npm run web:dev` (Vite em 127.0.0.1:5173, com proxy de `/api`).
+- `WEB_MOCK=1 npm run web:dev` sobe o front com dados sintéticos, sem API (mock em `web/mock/`, fora do build).
+
+O que existe:
+
+| Arquivo | O que é |
+|---|---|
+| `src/api/contract.ts` | Contrato HTTP (só tipos), compartilhado entre API e front |
+| `src/api/queries.ts`, `src/api/app.ts` | Consultas sobre `v_transactions` e app Hono (`createApp`) |
+| `src/config.ts` | `requireEnv` e montagem dos providers, usados por `sync` e `server` |
+| `scripts/server.ts` | Servidor em `127.0.0.1` (porta `PORT ?? 8787`) |
+| `web/` | Vite + React + Recharts |
+| tabela `connection_status` | Último status do fornecedor, `consent_expires_at`, gravado a cada sync |
+
+Segurança: bind só em 127.0.0.1; Host diferente de `127.0.0.1:*`/`localhost:*` → 403 (DNS rebinding);
+PATCH/POST exigem `Content-Type: application/json` e Origin local (CSRF); sem CORS; erro 500 genérico.
+
+Decisões:
+- Gasto = Σ expense − Σ refund, sem `ignored` e sem PENDING. Mês pelo `local_date`.
+- `pendingCount` conta só PENDING de expense/refund (bate com `pendingExpenseCents`).
+- O front busca o mês inteiro e filtra no cliente; transfer/card_payment/income ficam ocultos por padrão.
+- `byCategory` pode ter valor negativo se a categoria só tiver estornos no mês.
+
+Pendências da fase 2:
+- [ ] Revisão visual com os dados reais (só foi validada com mock sintético e por agregados da API).
+- [ ] O bundle tem ~630 kB (React + Recharts num chunk só). Aceitável para uso local.
+- [ ] `npm run sync` agora abre o banco antes de validar as variáveis; se faltar alguma, pode criar `data/app.db` vazio.
+
+### Especificação original
 
 - API **Hono** ligada **só em `127.0.0.1`** (nunca `0.0.0.0`). Rotas:
   `/api/summary?month=`, `/api/transactions?month=&category=&account=`,

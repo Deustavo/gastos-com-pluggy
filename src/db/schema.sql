@@ -80,6 +80,15 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   tx_count INTEGER
 );
 
+-- Última resposta do fornecedor sobre a conexão (gravada a cada sync, mesmo com erro).
+CREATE TABLE IF NOT EXISTS connection_status (
+  connection_id INTEGER PRIMARY KEY REFERENCES connections (id),
+  provider_status TEXT,
+  last_updated_at TEXT,
+  consent_expires_at TEXT,
+  checked_at TEXT NOT NULL
+);
+
 -- Leitura da Fase 2: transações com os overrides aplicados.
 -- Recriada a cada abertura para acompanhar mudanças de colunas (t.* é fixado na criação).
 DROP VIEW IF EXISTS v_transactions;
@@ -88,6 +97,7 @@ SELECT
   t.*,
   COALESCE(o.category, t.category) AS effective_category,
   COALESCE(o.ignored, 0) AS ignored,
+  o.category AS override_category,
   o.note AS override_note
 FROM transactions t
 LEFT JOIN overrides o ON o.fingerprint = t.fingerprint;

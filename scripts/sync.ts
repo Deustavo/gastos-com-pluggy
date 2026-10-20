@@ -1,19 +1,9 @@
 // Fase 1 (`npm run sync`): sincroniza as conexões da Pluggy para data/app.db
 // e imprime um resumo só com agregados (nunca descrições, valores ou ids de transação).
 
-import { openDb, seedConnections } from "../src/db/index.ts";
-import { PluggyClient } from "../src/providers/pluggy/client.ts";
-import { PluggyProvider } from "../src/providers/pluggy/provider.ts";
+import { setupProviders } from "../src/config.ts";
+import { openDb } from "../src/db/index.ts";
 import { SyncService, type SyncReport } from "../src/sync/sync.ts";
-
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    console.error(`Variável ${name} não definida. Copie .env.example para .env e preencha.`);
-    process.exit(1);
-  }
-  return value;
-}
 
 function printReport(r: SyncReport): void {
   console.log(`Sync ${r.startedAt} (janela desde ${r.windowFrom.slice(0, 10)})`);
@@ -43,13 +33,9 @@ function printReport(r: SyncReport): void {
 }
 
 async function main(): Promise<void> {
-  const client = new PluggyClient(requireEnv("PLUGGY_CLIENT_ID"), requireEnv("PLUGGY_CLIENT_SECRET"));
-  const itemIds = requireEnv("PLUGGY_ITEM_IDS").split(",").map((s) => s.trim()).filter(Boolean);
-
   const db = openDb();
   try {
-    seedConnections(db, "pluggy", itemIds);
-    const report = await new SyncService(db, { pluggy: new PluggyProvider(client) }).run();
+    const report = await new SyncService(db, setupProviders(db)).run();
     printReport(report);
     if (report.connections.some((c) => c.status === "error")) process.exitCode = 1;
   } finally {

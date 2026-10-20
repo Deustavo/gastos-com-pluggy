@@ -9,15 +9,28 @@
     "spike": "node --env-file=.env --import tsx scripts/spike.ts",
     "sync": "node --env-file=.env --import tsx scripts/sync.ts",
     "test": "node --import tsx --test 'test/**/*.test.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "api": "node --env-file=.env --import tsx scripts/server.ts",
+    "web:dev": "vite --config web/vite.config.ts",
+    "web:build": "vite build --config web/vite.config.ts",
+    "dashboard": "npm run web:build && npm run api"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
   },
   "dependencies": {
-    "better-sqlite3": "13.0.3"
+    "@hono/node-server": "2.1.5",
+    "better-sqlite3": "13.0.3",
+    "hono": "4.13.13",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "recharts": "3.10.1"
   }
 }

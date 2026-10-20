@@ -50,6 +50,7 @@ class FakeProvider implements DataProvider {
 const okStatus = (daysLeft: number): ConnectionStatus => ({
   ok: true,
   status: "UPDATED",
+  lastUpdatedAt: new Date(NOW.getTime() - DAY_MS),
   consentExpiresAt: new Date(NOW.getTime() + daysLeft * DAY_MS),
 });
 
@@ -102,6 +103,12 @@ const items: Record<string, FakeItem> = {
     txs: [],
     bills: [],
   },
+  "item-login": {
+    status: { ok: false, status: "LOGIN_ERROR", error: "credenciais inválidas" },
+    accounts: [],
+    txs: [],
+    bills: [],
+  },
 };
 
 function counts(db: Db): unknown {
@@ -122,7 +129,7 @@ test("sync de ponta a ponta com FakeProvider", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openfinance-sync-"));
   const db = openDb(path.join(dir, "app.db"));
   try {
-    seedConnections(db, "fake", ["item-broken", "item-bank", "item-card", "item-expired"]);
+    seedConnections(db, "fake", ["item-broken", "item-bank", "item-card", "item-expired", "item-login"]);
     const svc = new SyncService(db, { fake: new FakeProvider(items) });
 
     // 1ª execução numa data antiga: traz o histórico que depois sai da janela
@@ -152,9 +159,23 @@ test("sync de ponta a ponta com FakeProvider", async () => {
     assert.deepEqual(db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE external_id = 'acc-expired'").get(), { n: 0 });
     assert.ok(r2.alerts.some((a) => /expira em 20 dias/.test(a)));
 
-    // sync_runs: 3 execuções × 4 conexões, nenhuma ficou 'running'
+    assert.equal(conn(r2, 4).status, "error");
+
+    // sync_runs: 3 execuções × 5 conexões, nenhuma ficou 'running'
     const runs = db.prepare("SELECT status, COUNT(*) AS n FROM sync_runs GROUP BY status ORDER BY status").all();
-    assert.deepEqual(runs, [{ status: "error", n: 6 }, { status: "success", n: 6 }]);
+    assert.deepEqual(runs, [{ status: "error", n: 9 }, { status: "success", n: 6 }]);
+
+    // saúde da conexão: gravada sempre que o fornecedor responde (mesmo !ok); exceção não grava
+    const health = db
+      .prepare(`SELECT c.external_id, s.provider_status, s.last_updated_at, s.consent_expires_at, s.checked_at
+        FROM connection_status s JOIN connections c ON c.id = s.connection_id ORDER BY c.id`)
+      .all();
+    assert.deepEqual(health, [
+      { external_id: "item-bank", provider_status: "UPDATED", last_updated_at: "2026-10-19T12:00:00.000Z", consent_expires_at: "2027-11-24T12:00:00.000Z", checked_at: NOW.toISOString() },
+      { external_id: "item-card", provider_status: "UPDATED", last_updated_at: "2026-10-19T12:00:00.000Z", consent_expires_at: "2026-11-09T12:00:00.000Z", checked_at: NOW.toISOString() },
+      { external_id: "item-expired", provider_status: "UPDATED", last_updated_at: null, consent_expires_at: "2026-05-31T12:00:00.000Z", checked_at: NOW.toISOString() },
+      { external_id: "item-login", provider_status: "LOGIN_ERROR", last_updated_at: null, consent_expires_at: null, checked_at: NOW.toISOString() },
+    ]);
 
     // histórico fora da janela preservado
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE fingerprint = ?").get(fingerprint(oldBankTx)) as { n: number }).n, 1);

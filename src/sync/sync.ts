@@ -139,6 +139,15 @@ export class SyncService {
       if (!provider) return fail(`provider desconhecido: ${conn.provider}`);
 
       const status = await provider.getConnectionStatus(conn.external_id);
+      db.prepare(`
+        INSERT INTO connection_status (connection_id, provider_status, last_updated_at, consent_expires_at, checked_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (connection_id) DO UPDATE SET
+          provider_status = excluded.provider_status, last_updated_at = excluded.last_updated_at,
+          consent_expires_at = excluded.consent_expires_at, checked_at = excluded.checked_at`).run(
+        conn.id, status.status, status.lastUpdatedAt?.toISOString() ?? null,
+        status.consentExpiresAt?.toISOString() ?? null, now.toISOString(),
+      );
       if (status.consentExpiresAt) {
         report.consentExpiresAt = status.consentExpiresAt.toISOString();
         report.daysToConsentExpiry = Math.floor((status.consentExpiresAt.getTime() - now.getTime()) / DAY_MS);

@@ -1,0 +1,96 @@
+// Contrato HTTP entre a API local (Hono) e o dashboard (React).
+// Só tipos: o front importa com `import type`, sem puxar código do servidor.
+// Valores em centavos; meses em "YYYY-MM" e dias em "YYYY-MM-DD" (America/Sao_Paulo).
+
+import type { Kind } from "../sync/classify.ts";
+import type { SyncReport } from "../sync/sync.ts";
+
+export type { Kind, SyncReport };
+
+// Regras de "gasto" usadas em todo o dashboard:
+// gasto = Σ expense (OUT) − Σ refund (IN), ignorando linhas com ignored = true.
+// card_payment e transfer nunca entram. PENDING fica fora dos totais e aparece à parte.
+
+// GET /api/summary?month=YYYY-MM (padrão: mês atual)
+export interface SummaryResponse {
+  month: string;
+  expenseCents: number;
+  incomeCents: number;
+  pendingExpenseCents: number; // gasto PENDING do mês ("a confirmar")
+  pendingCount: number;
+  byCategory: { category: string; expenseCents: number }[]; // desc; refund abate da própria categoria
+  monthly: { month: string; expenseCents: number; incomeCents: number }[]; // 12 meses até `month`, asc, meses sem dado = 0
+}
+
+// GET /api/transactions?month=&category=&account=&status=&kind=
+// month obrigatório; os outros filtros são opcionais (account = id numérico; status = POSTED|PENDING).
+export interface TransactionRow {
+  id: number;
+  fingerprint: string;
+  accountId: number;
+  accountLabel: string; // ex.: "Cartão ••••1234"
+  localDate: string;
+  description: string;
+  amountCents: number; // assinado do ponto de vista do dono: OUT negativo, IN positivo
+  kind: Kind;
+  status: "POSTED" | "PENDING";
+  category: string; // efetiva (override > fornecedor); "Sem categoria" se vazia
+  providerCategory: string | null;
+  overridden: boolean; // tem categoria própria
+  ignored: boolean;
+  note: string | null;
+  installment: { number: number; total: number } | null;
+}
+export interface TransactionsResponse {
+  items: TransactionRow[]; // local_date desc
+}
+
+// GET /api/categories → categorias efetivas distintas, ordem alfabética
+export interface CategoriesResponse {
+  categories: string[];
+}
+
+// GET /api/connections
+export interface ConnectionHealth {
+  id: number;
+  provider: string;
+  nickname: string | null;
+  providerStatus: string | null; // último status do fornecedor (ex.: UPDATED)
+  lastUpdatedAt: string | null; // última atualização do fornecedor (ISO)
+  consentExpiresAt: string | null; // ISO
+  daysToConsentExpiry: number | null;
+  lastRun: { status: string; startedAt: string; finishedAt: string | null; error: string | null } | null;
+  accounts: {
+    id: number;
+    type: "BANK" | "CREDIT";
+    subtype: string | null;
+    name: string | null;
+    numberLast4: string | null;
+    balanceCents: number | null;
+  }[];
+}
+export interface ConnectionsResponse {
+  connections: ConnectionHealth[];
+}
+
+// PATCH /api/overrides/:fingerprint — campos ausentes ficam como estão;
+// category null volta à categoria do fornecedor. 404 se o fingerprint não existir em transactions.
+export interface OverrideRequest {
+  category?: string | null;
+  ignored?: boolean;
+  note?: string | null;
+}
+export interface OverrideResponse {
+  fingerprint: string;
+  category: string | null;
+  ignored: boolean;
+  note: string | null;
+}
+
+// POST /api/sync → roda o mesmo SyncService do `npm run sync`.
+// 409 se já houver um sync em andamento.
+export type SyncResponse = SyncReport;
+
+export interface ApiError {
+  error: string;
+}
