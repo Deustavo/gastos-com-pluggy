@@ -58,6 +58,7 @@ export interface PluggyTransaction {
   categoryId?: string;
   operationType?: string | null;
   providerId?: string | null;
+  order?: number;
   creditCardMetadata?: {
     installmentNumber?: number;
     totalInstallments?: number;
@@ -71,6 +72,7 @@ export interface PluggyTransaction {
 export interface PluggyBill {
   id: string;
   dueDate: string;
+  billClosingDate?: string;
   totalAmount: number;
   totalAmountCurrencyCode: string;
   minimumPaymentAmount?: number;

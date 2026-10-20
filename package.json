@@ -7,11 +7,17 @@
   },
   "scripts": {
     "spike": "node --env-file=.env --import tsx scripts/spike.ts",
+    "sync": "node --env-file=.env --import tsx scripts/sync.ts",
+    "test": "node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.20.5",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
   }
 }
