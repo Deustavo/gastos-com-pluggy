@@ -214,6 +214,13 @@ describe("GET /api/transactions", () => {
 test("bankFromName: reconhece pelo nome da conta", () => {
   assert.equal(bankFromName("Nu Pagamentos S.A. - Instituição de Pagamento"), "nubank");
   assert.equal(bankFromName("BANCO INTER"), "inter");
+  assert.equal(bankFromName("ITAÚ UNIBANCO S.A."), "itau");
+  assert.equal(bankFromName("Banco do Brasil S.A."), "bb");
+  assert.equal(bankFromName("CAIXA ECONOMICA FEDERAL"), "caixa");
+  assert.equal(bankFromName("BANCO C6 S.A."), "c6");
+  assert.equal(bankFromName("Mercado Pago Instituição de Pagamento"), "mercadopago");
+  assert.equal(bankFromName("Banco Pan S.A."), "pan");
+  assert.equal(bankFromName("Panamericano"), null);
   assert.equal(bankFromName("PLATINUM"), null);
   assert.equal(bankFromName("Internacional"), null);
   assert.equal(bankFromName(null), null);

@@ -24,7 +24,28 @@ export interface SummaryResponse {
   monthly: { month: string; expenseCents: number; incomeCents: number }[]; // jan–dez do ano de `month`, asc, meses sem dado = 0
 }
 
-export type Bank = "nubank" | "inter";
+export type Bank =
+  | "nubank"
+  | "inter"
+  | "itau"
+  | "bradesco"
+  | "bb"
+  | "caixa"
+  | "santander"
+  | "c6"
+  | "picpay"
+  | "mercadopago"
+  | "pagbank"
+  | "btg"
+  | "xp"
+  | "original"
+  | "pan"
+  | "neon"
+  | "sicoob"
+  | "sicredi"
+  | "safra"
+  | "banrisul"
+  | "willbank";
 
 // GET /api/transactions?month=&category=&account=&status=&kind=
 // month obrigatório; os outros filtros são opcionais (account = id numérico; status = POSTED|PENDING).

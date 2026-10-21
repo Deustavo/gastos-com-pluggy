@@ -133,11 +133,35 @@ export function accountLabel(type: "BANK" | "CREDIT", last4: string | null, name
 
 // O conector (MeuPluggy) não diz o banco; ele sai do nome das contas da conexão.
 // Cartões têm nome de produto ("PLATINUM"), então valem pela conexão inteira.
+// Ordem importa só onde um nome contém outro (nenhum caso hoje); comparação sem acento.
+const BANK_PATTERNS: [RegExp, Bank][] = [
+  [/nu pagamentos|nubank/, "nubank"],
+  [/\binter\b/, "inter"],
+  [/\bitau\b/, "itau"],
+  [/bradesco/, "bradesco"],
+  [/banco do brasil/, "bb"],
+  [/caixa economica|\bcef\b/, "caixa"],
+  [/santander/, "santander"],
+  [/\bc6\b/, "c6"],
+  [/picpay/, "picpay"],
+  [/mercado ?pago/, "mercadopago"],
+  [/pagbank|pagseguro/, "pagbank"],
+  [/\bbtg\b/, "btg"],
+  [/\bxp\b/, "xp"],
+  [/banco original/, "original"],
+  [/banco pan\b/, "pan"],
+  [/\bneon\b/, "neon"],
+  [/sicoob|bancoob/, "sicoob"],
+  [/sicredi/, "sicredi"],
+  [/\bsafra\b/, "safra"],
+  [/banrisul|banco do estado do rio grande do sul/, "banrisul"],
+  [/will ?bank/, "willbank"],
+];
+
 export function bankFromName(name: string | null): Bank | null {
   if (!name) return null;
-  if (/nu pagamentos|nubank/i.test(name)) return "nubank";
-  if (/\binter\b/i.test(name)) return "inter";
-  return null;
+  const n = name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return BANK_PATTERNS.find(([re]) => re.test(n))?.[1] ?? null;
 }
 
 function banksByConnection(db: Db): Map<number, Bank> {
