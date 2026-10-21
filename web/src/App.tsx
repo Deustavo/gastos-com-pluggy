@@ -141,6 +141,12 @@ export function App() {
         </div>
         <ConnectionsPanel data={conns.data} loading={conns.loading} error={conns.error} />
       </main>
+      <footer className="app-footer">
+        Feito por{" "}
+        <a href="https://gustavoandrade.vercel.app/" target="_blank" rel="noopener noreferrer">
+          Gustavo Andrade
+        </a>
+      </footer>
     </div>
   );
 }

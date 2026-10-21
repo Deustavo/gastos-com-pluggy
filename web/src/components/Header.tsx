@@ -75,6 +75,16 @@ export function Header({ month, onMonthChange, onSynced }: HeaderProps) {
         </nav>
       </div>
       <div className="sync-area">
+        <a
+          className="icon-btn lg"
+          href="https://github.com/Deustavo/gastos-com-pluggy"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Código no GitHub"
+          title="Código no GitHub"
+        >
+          <Icon name="github" size={18} />
+        </a>
         <button
           type="button"
           className={`icon-btn lg ${hidden ? "active" : ""}`}
