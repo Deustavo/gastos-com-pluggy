@@ -17,6 +17,14 @@ de leitura para a Pluggy.
 - 🔒 **Local e somente leitura**: API presa em `127.0.0.1`, banco com permissão 600, nenhum
   endpoint de pagamento.
 
+## 📸 Telas
+
+![Visão geral do mês: gasto, receita, gasto por categoria, evolução no ano e fixos x variáveis](docs/img/dashboard.png)
+
+![Transações do mês com filtros, categoria editável, marcação de fixo e opção de ignorar](docs/img/transacoes.png)
+
+<sub>Valores ocultos com o modo "ocultar valores"; descrições borradas para o README.</sub>
+
 ## 🗺️ Como funciona
 
 ```mermaid
