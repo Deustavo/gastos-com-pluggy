@@ -5,3 +5,6 @@ data/
 *.db
 *.db-*
 web/dist/
+
+# Logs locais (vite, servidor)
+*.log

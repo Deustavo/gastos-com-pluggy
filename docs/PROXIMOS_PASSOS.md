@@ -6,11 +6,11 @@
 ## Contexto em 30 segundos
 
 App **pessoal e local** (só nesta máquina) que lê **conta corrente e cartão de
-crédito** do Inter PF via Open Finance e mostra os gastos num **dashboard no
+crédito** (pessoa física) via Open Finance e mostra os gastos num **dashboard no
 navegador**. Precisa suportar **N bancos** e usar **permissões somente leitura**.
 A stack é TypeScript com Node 22.
 
-- Pessoa física não acessa o Open Finance diretamente, e a API do Inter é só PJ.
+- Pessoa física não acessa o Open Finance diretamente, e as APIs próprias dos bancos costumam ser só PJ.
   A fonte de dados é o **MeuPluggy + conector MeuPluggy** da API da Pluggy:
   gratuito, uso pessoal, até 5 conexões.
 - Decisões, arquitetura e riscos estão em [`PLANO.md`](PLANO.md). Este arquivo
@@ -23,7 +23,7 @@ A stack é TypeScript com Node 22.
 | `src/providers/pluggy/client.ts` | Cliente **somente leitura** (GET só em `/items/:id`, `/accounts`, `/v2/transactions`, `/bills`; o único POST é `/auth`). Renova a API key sozinho (vale 2h) e tenta de novo em caso de 429. |
 | `scripts/spike.ts` | Fase 0 (`npm run spike`): imprime um resumo e salva o JSON bruto em `data/raw/<itemId>/` com permissão 600 |
 | `docs/PLANO.md` | Plano, regras de "gasto" e riscos (atualizado com o que a fase 0 mostrou) |
-| `.env` | `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_ITEM_IDS` (1 item hoje: Inter) |
+| `.env` | `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_ITEM_IDS` (um por banco) |
 | `package.json` | Dependências de dev: `tsx`, `typescript`, `@types/node`. Scripts `spike` e `typecheck`. |
 
 Fase 1 (pronta):
@@ -38,12 +38,12 @@ Fase 1 (pronta):
 | `scripts/sync.ts` | `npm run sync` (resumo agregado; exit 1 se alguma conexão falhar) |
 | `test/` | `npm test`: 24 testes, fixtures sintéticas |
 
-## Fatos validados na fase 0 (dados reais do Inter)
+## Fatos validados na fase 0 (dados reais)
 
 - Item: conector `MeuPluggy` com `isOpenFinance=false`, status `UPDATED`/`SUCCESS`,
-  `consentExpiresAt = 2027-10-20`.
-- Contas: `BANK/CHECKING_ACCOUNT` (304 transações), `BANK/SAVINGS_ACCOUNT` (0) e
-  `CREDIT/CREDIT_CARD` (401 transações, 21 delas `PENDING`), mais 13 faturas.
+  `consentExpiresAt` 1 ano após a autorização.
+- Contas: `BANK/CHECKING_ACCOUNT`, `BANK/SAVINGS_ACCOUNT` e
+  `CREDIT/CREDIT_CARD` (algumas transações `PENDING`), mais as faturas.
   São cerca de 12 meses de histórico.
 - **`providerId` e `providerCode` vêm sempre vazios.** O `id` da Pluggy muda nas
   transações de cartão perto do fechamento da fatura, então **não serve como chave**.
@@ -54,9 +54,9 @@ Fase 1 (pronta):
   - conta corrente: `DEBIT` tem `amount < 0` e `CREDIT` tem `amount > 0`;
   - cartão: `DEBIT` tem `amount > 0` (compra) e `CREDIT` tem `amount < 0`
     (pagamento ou estorno).
-- Cartão: 95% das transações têm `creditCardMetadata.billId`. As 21 pendentes
+- Cartão: 95% das transações têm `creditCardMetadata.billId`. As pendentes
   não têm `billId`, mas têm `billForecastDate` (`YYYY-MM`).
-- **Integridade:** em todas as 13 faturas, a soma das compras com aquele `billId`
+- **Integridade:** em todas as faturas, a soma das compras com aquele `billId`
   é igual ao `totalAmount` da fatura. O pagamento da fatura anterior aparece
   como transação negativa dentro da fatura seguinte.
 - Na conta corrente aparecem muitas transações das categorias `Investments`,
@@ -68,8 +68,8 @@ Fase 1 (pronta):
 
 ### Resultado com os dados reais
 
-- 2 execuções seguidas com contagens idênticas: conta corrente 304 (expense 144, transfer 120, income 29, card_payment 11); cartão 401 (expense 386, card_payment 11, refund 4); 13 faturas.
-- Integridade: **11 faturas ok, 2 `out_of_window`, 0 divergências**. As 2 mais antigas têm o ciclo começando antes da janela de 365 dias (transações incompletas), por isso não são comparadas. A conta da integridade **exclui os pagamentos de fatura** (`card_payment`); sem isso só 1 bate.
+- 2 execuções seguidas com contagens idênticas por conta e por `kind`.
+- Integridade: **todas as faturas dentro da janela ok, 0 divergências**; as mais antigas ficam `out_of_window`. Elas têm o ciclo começando antes da janela de 365 dias (transações incompletas), por isso não são comparadas. A conta da integridade **exclui os pagamentos de fatura** (`card_payment`); sem isso quase nenhuma bate.
 - Pagamentos de fatura caem entre −6 e 0 dias do vencimento, dentro da tolerância de ±10.
 - Classificação é um passo **global** após todas as conexões, porque a fatura de um banco pode ser paga pela conta de outro.
 - O DELETE da janela começa no mínimo entre `from` e a transação mais antiga recebida, para não duplicar se o fornecedor arredondar a data.
@@ -170,7 +170,7 @@ como "a confirmar".
 
 - [x] `npm run sync` cria `data/app.db` (permissão 600) e é idempotente: rodar
       duas vezes não muda as contagens.
-- [x] Integridade: as 11 faturas dentro da janela batem; as 2 mais antigas ficam `out_of_window`.
+- [x] Integridade: as faturas dentro da janela batem; as mais antigas ficam `out_of_window`.
 - [x] Testes de `classify` e `integrity` com fixtures sintéticas passando.
 - [x] `npm run typecheck` sem erros.
 - [x] Uma conexão com erro não impede o sync das outras.
@@ -244,7 +244,7 @@ Observações:
 ## Pendências
 
 - [x] `.env.example` sem `PLUGGY_API_KEY`. `.env` estava com permissão 664; corrigido para 600.
-- [ ] (Opcional) Refazer o consentimento do Inter no meu.pluggy.ai com menos
+- [ ] (Opcional) Refazer o consentimento do banco no meu.pluggy.ai com menos
       categorias de dados. Hoje o item recebeu todos os produtos, inclusive
       IDENTITY, INVESTMENTS e LOANS.
 - [ ] Confirmar que o disco está criptografado (LUKS), já que `data/` guarda o
@@ -260,7 +260,7 @@ Observações:
 - Na Pluggy, usar só a API de dados, nunca endpoints de pagamento. Qualquer rota
   nova no client entra explicitamente em `ALLOWED_READ_PATHS` e precisa ser GET.
 - No Dashboard da Pluggy, o banco **nunca** é conectado pelo conector direto do
-  banco (por exemplo, o do Inter com QR Code). O caminho é sempre o MeuPluggy.
+  banco (por exemplo, o de QR Code do próprio banco). O caminho é sempre o MeuPluggy.
 - Referência da API: [guia MeuPluggy](https://docs.pluggy.ai/en/docs/guides/meu-pluggy-personal-use.md),
   OpenAPI em `https://api.pluggy.ai/oas3.json` e documentação completa em
   `https://docs.pluggy.ai/llms-full.txt`.

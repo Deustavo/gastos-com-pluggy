@@ -2,13 +2,13 @@
 
 App local (roda só nesta máquina) que lê conta corrente e cartão de crédito
 dos meus bancos e mostra os gastos num dashboard no navegador.
-Começa pelo Inter PF e foi pensado para N bancos.
+Começa por um banco (PF) e foi pensado para N bancos.
 
 ## Decisões
 
 | Tema | Decisão | Motivo |
 |---|---|---|
-| Fonte de dados | **MeuPluggy + conector MeuPluggy** na API da Pluggy | Pessoa física não pode acessar o Open Finance diretamente, e a API do Inter é só para PJ. O MeuPluggy é gratuito para uso pessoal (até 5 conexões) e não expira com o trial. |
+| Fonte de dados | **MeuPluggy + conector MeuPluggy** na API da Pluggy | Pessoa física não pode acessar o Open Finance diretamente, e as APIs próprias dos bancos costumam ser só para PJ. O MeuPluggy é gratuito para uso pessoal (até 5 conexões) e não expira com o trial. |
 | Plano B | Importação de OFX/CSV | Não depende de terceiros |
 | Permissões | Só leitura | O consentimento de dados do Open Finance não movimenta dinheiro. O `PluggyClient` só faz GET em rotas permitidas; o único POST é `/auth`. |
 | Linguagem | TypeScript (Node 22, `tsx`) | Preferência pessoal |
@@ -61,7 +61,7 @@ Por isso, normalizar para `direction` + valor absoluto no momento do sync.
 
 ## Fases
 
-0. **Teste de viabilidade** (`npm run spike`): confirmar que os dados do Inter
+0. **Teste de viabilidade** (`npm run spike`): confirmar que os dados do banco
    chegam completos e guardar o JSON bruto em `data/raw/`.
 1. **Sync + SQLite:** schema, `DataProvider`, comando `sync`, dedupe.
 2. **Dashboard:** gasto por mês e por categoria, lista filtrável, saúde das conexões.
@@ -75,7 +75,7 @@ Por isso, normalizar para `direction` + valor absoluto no momento do sync.
 |---|---|
 | Vazamento do `client_secret`, que dá leitura de todo o histórico | `.env` com `chmod 600`, fora do git (depois migrar para o keyring). Nunca logar. Gerar outro se vazar. |
 | Conectar um banco por conector que pede senha | No meu.pluggy.ai, escolher sempre a opção **Open Finance** do banco. O item do Dashboard é do conector MeuPluggy, então a checagem `isOpenFinance` não vale para ele. |
-| Cópia dos dados na Pluggy | Empresa regulada pelo BC. Revogar no app do Inter ou no MeuPluggy quando não usar mais. |
+| Cópia dos dados na Pluggy | Empresa regulada pelo BC. Revogar no app do banco ou no MeuPluggy quando não usar mais. |
 | Autorização do MeuPluggy expira em 1 ano e as leituras voltam vazias | O dashboard mostra `consentExpiresAt` e alerta 30 dias antes. Para renovar, repetir o "Connect Account" no Dashboard. |
 | SQLite e `data/raw/` com o histórico financeiro | Disco criptografado (LUKS), arquivos com permissão 600, `data/` no `.gitignore` |
 | Dashboard exposto | Bind apenas em `127.0.0.1` |
