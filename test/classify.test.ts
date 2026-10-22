@@ -4,8 +4,10 @@ import {
   CARD_PAYMENT_TOLERANCE_DAYS,
   classify,
   isOwnTransferCategory,
+  pairCardPayments,
   type BillRef,
   type ClassifyTx,
+  type PairTx,
 } from "../src/sync/classify.ts";
 
 // Faturas sintéticas
@@ -97,4 +99,35 @@ test("BANK + IN categoria própria → transfer", () => {
 test("BANK + IN outros → income (mesmo com valor de fatura)", () => {
   assert.equal(classify(tx({ direction: "IN", category: "Salary" }), bills), "income");
   assert.equal(classify(tx({ direction: "IN", amountCentsAbs: 50_000, localDate: "2026-01-10" }), bills), "income");
+});
+
+// ---- pagamento parcial de fatura (pareamento cartão × conta) ----
+
+function ptx(p: Partial<PairTx> & { id: number }): PairTx {
+  return { connectionId: 1, accountType: "BANK", direction: "OUT", amountCentsAbs: 5_830, localDate: "2026-06-24", kind: "expense", ...p };
+}
+const cardIn = (p: Partial<PairTx> & { id: number }) =>
+  ptx({ accountType: "CREDIT", direction: "IN", kind: "refund", ...p });
+
+test("pairCardPayments: estorno no cartão + gasto na conta, mesmo valor e dia → par", () => {
+  const got = pairCardPayments([cardIn({ id: 1 }), ptx({ id: 2 }), ptx({ id: 3, amountCentsAbs: 5_831 })]);
+  assert.deepEqual([...got].sort(), [1, 2]);
+});
+
+test("pairCardPayments: 1:1 e prefere o mais próximo", () => {
+  const got = pairCardPayments([
+    cardIn({ id: 1 }),
+    ptx({ id: 2, localDate: "2026-06-25" }),
+    ptx({ id: 3 }),
+    ptx({ id: 4 }),
+  ]);
+  assert.deepEqual([...got].sort(), [1, 3]);
+});
+
+test("pairCardPayments: não pareia outra conexão, data distante nem kind diferente", () => {
+  assert.equal(pairCardPayments([cardIn({ id: 1 }), ptx({ id: 2, connectionId: 2 })]).size, 0);
+  assert.equal(pairCardPayments([cardIn({ id: 1 }), ptx({ id: 2, localDate: "2026-06-26" })]).size, 0);
+  assert.equal(pairCardPayments([cardIn({ id: 1 }), ptx({ id: 2, kind: "transfer" })]).size, 0);
+  assert.equal(pairCardPayments([cardIn({ id: 1, kind: "card_payment" }), ptx({ id: 2 })]).size, 0);
+  assert.equal(pairCardPayments([ptx({ id: 1, direction: "IN", kind: "income" }), ptx({ id: 2 })]).size, 0);
 });

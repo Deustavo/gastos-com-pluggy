@@ -5,7 +5,7 @@ import { applyNature } from "../categorize/nature.ts";
 import { applyRules } from "../categorize/rules.ts";
 import type { Db } from "../db/index.ts";
 import type { Account, AccountType, Bill, DataProvider, Direction, Transaction } from "../providers/types.ts";
-import { classify, type BillRef, type Kind } from "./classify.ts";
+import { classify, pairCardPayments, type BillRef, type Kind, type PairTx } from "./classify.ts";
 import { toLocalDate } from "./dates.ts";
 import { fingerprint } from "./fingerprint.ts";
 import { checkBills, summarizeIntegrity, type IntegrityResult } from "./integrity.ts";
@@ -276,10 +276,12 @@ export class SyncService {
 
     const rows = db
       .prepare(`
-        SELECT t.id, a.type AS account_type, t.direction, t.amount_cents_abs, t.category, t.local_date, t.bill_id
-        FROM transactions t JOIN accounts a ON a.id = t.account_id`)
+        SELECT t.id, a.connection_id, a.type AS account_type, t.direction, t.amount_cents_abs, t.category, t.local_date, t.bill_id
+        FROM transactions t JOIN accounts a ON a.id = t.account_id
+        ORDER BY t.local_date, t.id`)
       .all() as {
       id: number;
+      connection_id: number;
       account_type: AccountType;
       direction: Direction;
       amount_cents_abs: number;
@@ -288,22 +290,30 @@ export class SyncService {
       bill_id: string | null;
     }[];
 
+    const classified: PairTx[] = rows.map((r) => ({
+      id: r.id,
+      connectionId: r.connection_id,
+      accountType: r.account_type,
+      direction: r.direction,
+      amountCentsAbs: r.amount_cents_abs,
+      localDate: r.local_date,
+      kind: classify(
+        {
+          accountType: r.account_type,
+          direction: r.direction,
+          amountCentsAbs: r.amount_cents_abs,
+          category: r.category ?? undefined,
+          localDate: r.local_date,
+          billId: r.bill_id ?? undefined,
+        },
+        bills,
+      ),
+    }));
+    const paired = pairCardPayments(classified);
+
     const update = db.prepare("UPDATE transactions SET kind = ? WHERE id = ?");
     db.transaction(() => {
-      for (const r of rows) {
-        const kind = classify(
-          {
-            accountType: r.account_type,
-            direction: r.direction,
-            amountCentsAbs: r.amount_cents_abs,
-            category: r.category ?? undefined,
-            localDate: r.local_date,
-            billId: r.bill_id ?? undefined,
-          },
-          bills,
-        );
-        update.run(kind, r.id);
-      }
+      for (const t of classified) update.run(paired.has(t.id) ? "card_payment" : t.kind, t.id);
     })();
   }
 

@@ -52,3 +52,38 @@ export function classify(tx: ClassifyTx, bills: BillRef[]): Kind {
   if (isOwnTransferCategory(tx.category)) return "transfer";
   return tx.direction === "OUT" ? "expense" : "income";
 }
+
+// Pagamento parcial/antecipado de fatura: o valor não bate com nenhuma fatura, então sai
+// como "estorno" no cartão e "gasto" na conta. Se os dois estão na mesma conexão, com o
+// mesmo valor e até PAIR_TOLERANCE_DAYS de distância, viram card_payment (pareamento 1:1).
+export const PAIR_TOLERANCE_DAYS = 1;
+
+export interface PairTx {
+  id: number;
+  connectionId: number;
+  accountType: AccountType;
+  direction: Direction;
+  amountCentsAbs: number;
+  localDate: string; // YYYY-MM-DD
+  kind: Kind;
+}
+
+// Devolve os ids (dos dois lados) que devem virar card_payment
+export function pairCardPayments(txs: PairTx[]): Set<number> {
+  const bankOut = txs.filter((t) => t.accountType !== "CREDIT" && t.direction === "OUT" && t.kind === "expense");
+  const paired = new Set<number>();
+  for (const c of txs) {
+    if (c.accountType !== "CREDIT" || c.direction !== "IN" || c.kind !== "refund") continue;
+    let best: PairTx | undefined;
+    for (const b of bankOut) {
+      if (paired.has(b.id) || b.connectionId !== c.connectionId || b.amountCentsAbs !== c.amountCentsAbs) continue;
+      const d = daysBetween(b.localDate, c.localDate);
+      if (d <= PAIR_TOLERANCE_DAYS && (!best || d < daysBetween(best.localDate, c.localDate))) best = b;
+    }
+    if (best) {
+      paired.add(c.id);
+      paired.add(best.id);
+    }
+  }
+  return paired;
+}
