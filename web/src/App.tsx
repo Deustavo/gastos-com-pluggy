@@ -108,6 +108,7 @@ export function App() {
         </div>
         <div id="transacoes">
           <TransactionsTable
+            month={month}
             rows={txs.data?.items}
             loading={txs.loading}
             error={txs.error}

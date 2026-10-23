@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import type { CategoryRule, Nature, NatureRequest, OverrideRequest, TransactionRow } from "../../../src/api/contract.ts";
 import { MAX_CATEGORY } from "../api.ts";
-import { formatDay, KIND_LABEL, NATURE_LABEL } from "../format.ts";
+import { buildExpensesTxt, downloadText } from "../exportTxt.ts";
+import { formatDateTime, formatDay, KIND_LABEL, NATURE_LABEL } from "../format.ts";
 import { useMoney } from "../privacy.ts";
 import { BANK_NAME, BankIcon } from "./BankIcon.tsx";
 import { Icon } from "./Icon.tsx";
@@ -19,6 +20,7 @@ export interface TxFilters {
 }
 
 interface Props {
+  month: string;
   rows: TransactionRow[] | undefined;
   loading: boolean;
   error: string | undefined;
@@ -36,6 +38,7 @@ const NON_EXPENSE = new Set(["transfer", "card_payment", "income"]);
 const NEUTRAL = new Set(["transfer", "card_payment"]);
 
 export function TransactionsTable({
+  month,
   rows,
   loading,
   error,
@@ -77,6 +80,9 @@ export function TransactionsTable({
   const hiddenNonExpense = filters.showNonExpense ? 0 : all.filter((r) => NON_EXPENSE.has(r.kind)).length;
   const anyFilter =
     !!filters.category || filters.account !== undefined || filters.status !== "ALL" || filters.nature !== undefined;
+
+  const exportTxt = () =>
+    downloadText(`gastos-${month}.txt`, buildExpensesTxt(month, all, formatDateTime(new Date().toISOString())));
 
   const set = (patch: Partial<TxFilters>) => onFiltersChange({ ...filters, ...patch });
   const clearFilters = () => set({ category: undefined, account: undefined, status: "ALL", nature: undefined });
@@ -151,10 +157,20 @@ export function TransactionsTable({
       empty={emptyMsg}
       actions={
         rows && (
-          <span className="muted small">
-            {visible.length} de {all.length}
-            {hiddenNonExpense > 0 && ` · ${hiddenNonExpense} ocultas (não são gasto)`}
-          </span>
+          <>
+            <span className="muted small">
+              {visible.length} de {all.length}
+              {hiddenNonExpense > 0 && ` · ${hiddenNonExpense} ocultas (não são gasto)`}
+            </span>
+            <button
+              type="button"
+              className="small-btn"
+              onClick={exportTxt}
+              title="Baixar os gastos do mês (todas as contas, sem os filtros da tabela) em .txt"
+            >
+              <Icon name="download" size={14} /> Exportar .txt
+            </button>
+          </>
         )
       }
     >

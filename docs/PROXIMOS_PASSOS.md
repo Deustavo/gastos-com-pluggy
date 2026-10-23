@@ -201,6 +201,9 @@ Decisões:
 - `pendingCount` conta só PENDING de expense/refund (bate com `pendingExpenseCents`).
 - O front busca o mês inteiro e filtra no cliente; transfer/card_payment/income ficam ocultos por padrão.
 - `byCategory` pode ter valor negativo se a categoria só tiver estornos no mês.
+- Botão "Exportar .txt" na tabela de transações (`web/src/exportTxt.ts`, 100% no cliente): baixa
+  `gastos-YYYY-MM.txt` com total/fixo/variável, totais por categoria e os lançamentos do mês, com as
+  mesmas regras de gasto; PENDING vai numa seção à parte. Ignora os filtros da tabela e o modo "ocultar valores".
 
 Pendências da fase 2:
 - [ ] Revisão visual com os dados reais (só foi validada com mock sintético e por agregados da API).
