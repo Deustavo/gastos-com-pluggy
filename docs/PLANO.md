@@ -52,7 +52,7 @@ Por isso, normalizar para `direction` + valor absoluto no momento do sync.
   - pagamento da fatura do cartão, identificado por débito com o mesmo valor do
     `totalAmount` de uma fatura, perto do `dueDate` (as compras já foram contadas
     no cartão);
-  - categorias `Investments`, `Fixed income` e `Same person transfer*`, que são
+  - categorias `Investments`, `Fixed income`, `Variable income` e `Same person transfer*`, que são
     aplicações e transferências entre contas próprias.
 - **Conferência:** a soma das compras de cada `billId` bate exatamente com o
   `totalAmount` da fatura. Usar isso como teste de integridade do sync.

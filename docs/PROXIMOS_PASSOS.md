@@ -158,7 +158,7 @@ Para cada conexão:
 | Cartão | `amount < 0`, com valor absoluto igual ao `total_cents` de uma fatura anterior | `card_payment` (não é gasto) |
 | Cartão | outros casos com `amount < 0` | `refund` (abate do gasto) |
 | Conta | `amount < 0`, com valor igual ao `total_cents` de alguma fatura e `local_date` a até ±10 dias do `due_date` | `card_payment` (não é gasto, porque as compras já contam no cartão) |
-| Conta | `amount < 0` e categoria `Investments`, `Fixed income` ou começando com `Same person transfer` | `transfer` |
+| Conta | `amount < 0` e categoria `Investments`, `Fixed income`, `Variable income` ou começando com `Same person transfer` | `transfer` |
 | Conta | outros casos com `amount < 0` | `expense` |
 | Conta | `amount > 0` e categoria de investimento ou transferência própria | `transfer` |
 | Conta | outros casos com `amount > 0` | `income` |

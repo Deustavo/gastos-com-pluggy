@@ -27,6 +27,7 @@ export function isOwnTransferCategory(category?: string): boolean {
   return (
     category === "Investments" ||
     category === "Fixed income" ||
+    category === "Variable income" ||
     category.startsWith("Same person transfer")
   );
 }

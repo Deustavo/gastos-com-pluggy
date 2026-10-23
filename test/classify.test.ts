@@ -28,6 +28,7 @@ test("tolerância exportada é 10 dias", () => {
 test("isOwnTransferCategory", () => {
   assert.equal(isOwnTransferCategory("Investments"), true);
   assert.equal(isOwnTransferCategory("Fixed income"), true);
+  assert.equal(isOwnTransferCategory("Variable income"), true);
   assert.equal(isOwnTransferCategory("Same person transfer - PIX"), true);
   assert.equal(isOwnTransferCategory("Same person transfer"), true);
   assert.equal(isOwnTransferCategory("Transfers"), false);
